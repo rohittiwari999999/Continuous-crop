@@ -1,0 +1,6 @@
+{
+  "name": "SnapCrop",
+  "description": "Fast continuous image crop & resize workstation with instant background saves, gallery mini-map, and camera capture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

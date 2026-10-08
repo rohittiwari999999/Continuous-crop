@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Active selection fill -->
+    <path
+        android:fillColor="#2238BDF8"
+        android:pathData="M34,34h40v40h-40z" />
+    
+    <!-- Crop Rule-of-Thirds Grid in center -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#6638BDF8"
+        android:strokeWidth="1.2"
+        android:pathData="M47.33,34v40 M60.66,34v40 M34,47.33h40 M34,60.66h40" />
+
+    <!-- Outer Crop Marks / Extended Guillotine Lines -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M27,34h12 M69,34h12 M27,74h12 M69,74h12 M34,27v12 M34,69v12 M74,27v12 M74,69v12" />
+
+    <!-- Distinct Thick Crop Frame Corners -->
+    <!-- Top-Left Corner -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="square"
+        android:pathData="M34,46V34h12" />
+    <!-- Top-Right Corner -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="square"
+        android:pathData="M62,34h12v12" />
+    <!-- Bottom-Left Corner -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="square"
+        android:pathData="M34,62v12h12" />
+    <!-- Bottom-Right Corner -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="square"
+        android:pathData="M62,74h12V62" />
+
+    <!-- Center focus crosshair dot -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M54,54m-2.5,0a2.5,2.5 0 1,1 5,0a2.5,2.5 0 1,1 -5,0" />
+</vector>
