@@ -14,7 +14,6 @@ import com.example.ui.theme.WorkspaceBackground
 import com.example.ui.viewmodel.ContinuousCropViewModel
 
 class MainActivity : ComponentActivity() {
-
     private val cropViewModel: ContinuousCropViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {

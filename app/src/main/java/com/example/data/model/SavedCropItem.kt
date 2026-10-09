@@ -12,19 +12,16 @@ data class SavedCropItem(
     val cropHeight: Int,
     val aspectRatioLabel: String,
     val timestamp: Long,
-    val fileSizeBytes: Long = 0L
+    val fileSizeBytes: Long = 0L,
+    val detectedName: String? = null
 ) {
     val formattedDimensions: String
-        get() = "${cropWidth} × ${cropHeight}"
+        get() = "${cropWidth}×${cropHeight}"
 
     val formattedSize: String
         get() {
             if (fileSizeBytes <= 0) return ""
-            val kb = fileSizeBytes / 1024f
-            return if (kb > 1024) {
-                String.format("%.1f MB", kb / 1024f)
-            } else {
-                String.format("%.0f KB", kb)
-            }
+            val kb = fileSizeBytes / 1024.0
+            return if (kb > 1024) String.format("%.1f MB", kb / 1024.0) else String.format("%.0f KB", kb)
         }
 }

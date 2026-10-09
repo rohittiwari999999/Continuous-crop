@@ -33,7 +33,7 @@ private val WorkstationColorScheme = darkColorScheme(
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Keep dark workstation theme consistent for precision photo work
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val view = LocalView.current
@@ -43,8 +43,9 @@ fun MyApplicationTheme(
             if (window != null) {
                 window.statusBarColor = WorkspaceBackground.toArgb()
                 window.navigationBarColor = WorkspaceBackground.toArgb()
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
-                WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = false
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.isAppearanceLightStatusBars = false
+                insetsController.isAppearanceLightNavigationBars = false
             }
         }
     }

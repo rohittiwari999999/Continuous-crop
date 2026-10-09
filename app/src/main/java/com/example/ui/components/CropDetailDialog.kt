@@ -1,10 +1,7 @@
 package com.example.ui.components
 
-import android.content.Context
-import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,8 +23,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -37,188 +30,136 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.SavedCropItem
-import com.example.ui.theme.ErrorRose
 import com.example.ui.theme.NeonCyan
-import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.WorkspaceBackground
 import com.example.ui.theme.WorkspaceBorder
 import com.example.ui.theme.WorkspaceSurface
 import com.example.ui.theme.WorkspaceSurfaceVariant
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun CropDetailDialog(
     item: SavedCropItem,
     onDismiss: () -> Unit,
-    onDelete: (SavedCropItem) -> Unit
+    onShareClick: (SavedCropItem) -> Unit
 ) {
-    val context = LocalContext.current
-    val dateFormatted = SimpleDateFormat("MMM d, yyyy • h:mm:ss a", Locale.getDefault())
-        .format(Date(item.timestamp))
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = WorkspaceSurface),
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, WorkspaceBorder, RoundedCornerShape(16.dp))
-                .testTag("crop_detail_dialog"),
-            color = WorkspaceSurface
+                .fillMaxWidth()
+                .padding(16.dp)
+                .testTag("crop_detail_dialog")
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Header
+                // Top row with Title & Close button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = NeonCyan,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Cropped Item Detail",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = TextPrimary
-                        )
-                    }
-
+                    Text(
+                        text = item.detectedName ?: "Photo Details",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonCyan
+                    )
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(32.dp).testTag("close_detail_dialog_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close",
-                            tint = TextMuted,
+                            tint = TextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Image Preview Card
+                // Image preview
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(WorkspaceBackground)
-                        .border(1.dp, WorkspaceBorder, RoundedCornerShape(10.dp)),
+                        .height(240.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(WorkspaceSurfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
                         bitmap = item.thumbnailBitmap.asImageBitmap(),
-                        contentDescription = "Cropped Preview",
+                        contentDescription = "Preview",
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Metadata Details
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = WorkspaceSurfaceVariant),
-                    shape = RoundedCornerShape(10.dp)
+                // Metadata items
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(WorkspaceSurfaceVariant)
+                        .padding(12.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        DetailRow(label = "Dimensions", value = "${item.cropWidth} × ${item.cropHeight} px")
-                        DetailRow(label = "Aspect Ratio", value = item.aspectRatioLabel)
-                        if (item.fileSizeBytes > 0) {
-                            DetailRow(label = "File Size", value = item.formattedSize)
-                        }
-                        DetailRow(label = "Saved Time", value = dateFormatted)
-                        if (item.filePath != null) {
-                            DetailRow(label = "Storage Location", value = item.filePath)
-                        }
+                    if (!item.detectedName.isNullOrBlank()) {
+                        DetailRow(label = "Roll / ID:", value = item.detectedName)
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                    DetailRow(label = "Resolution:", value = item.formattedDimensions)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    DetailRow(label = "Aspect Ratio:", value = item.aspectRatioLabel)
+                    if (item.formattedSize.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        DetailRow(label = "File Size:", value = item.formattedSize)
+                    }
+                    if (!item.filePath.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        DetailRow(label = "Filename:", value = item.filePath)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
-                // Action Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                // Share Button
+                Button(
+                    onClick = { onShareClick(item) },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeonCyan,
+                        contentColor = WorkspaceSurface
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("share_cropped_item_button")
                 ) {
-                    // Share
-                    Button(
-                        onClick = {
-                            shareCropItem(context, item)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = NeonCyan,
-                            contentColor = WorkspaceBackground
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Share", fontWeight = FontWeight.Bold)
-                    }
-
-                    // Delete
-                    OutlinedButton(
-                        onClick = {
-                            onDelete(item)
-                            onDismiss()
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = ErrorRose
-                        ),
-                        border = ButtonDefaults.outlinedButtonBorder.copy(
-                            brush = androidx.compose.ui.graphics.SolidColor(ErrorRose.copy(alpha = 0.5f))
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = null,
-                            tint = ErrorRose,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Delete", fontWeight = FontWeight.SemiBold)
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Share Photo",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
                 }
             }
         }
@@ -229,28 +170,18 @@ fun CropDetailDialog(
 private fun DetailRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = TextSecondary
+            color = TextSecondary,
+            fontSize = 12.sp
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = TextPrimary
+            color = TextPrimary,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp
         )
     }
-}
-
-private fun shareCropItem(context: Context, item: SavedCropItem) {
-    val uri = item.uri ?: return
-    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "image/jpeg"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(Intent.createChooser(shareIntent, "Share Cropped Image"))
 }

@@ -4,10 +4,6 @@ import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.AppSettings
@@ -18,120 +14,48 @@ import com.example.data.model.SavedCropItem
 import com.example.data.repository.SettingsRepository
 import com.example.util.BitmapUtils
 import com.example.util.MediaStoreHelper
-import kotlinx.coroutines.Dispatchers
+import com.example.util.PassportDetectionHelper
+import com.example.util.PhotoNumberOcrHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.UUID
-
-data class ContinuousCropUiState(
-    val sourceBitmap: Bitmap? = null,
-    val sourceUri: Uri? = null,
-    val cropRect: CropRect = CropRect(0.1f, 0.1f, 0.9f, 0.9f),
-    val selectedAspectRatio: AspectRatio = AspectRatio.FREE,
-    val selectedResizeOption: ResizeOption = ResizeOption.ORIGINAL,
-    val rotationDegrees: Int = 0,
-    val isFlippedHorizontally: Boolean = false,
-    val savedItems: List<SavedCropItem> = emptyList(),
-    val inFlightSavesCount: Int = 0,
-    val lastSavedItemId: String? = null,
-    val selectedItemForDetail: SavedCropItem? = null,
-    val isLoadingImage: Boolean = false,
-    val errorMessage: String? = null,
-    val settings: AppSettings = AppSettings(),
-    val isSettingsOpen: Boolean = false
-)
 
 class ContinuousCropViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepository = SettingsRepository(application.applicationContext)
 
-    private val _uiState = MutableStateFlow(
-        ContinuousCropUiState(
-            settings = settingsRepository.settingsFlow.value,
-            selectedAspectRatio = settingsRepository.settingsFlow.value.defaultAspectRatio,
-            selectedResizeOption = settingsRepository.settingsFlow.value.defaultResizeOption
-        )
-    )
+    private val _uiState = MutableStateFlow(ContinuousCropUiState())
     val uiState: StateFlow<ContinuousCropUiState> = _uiState.asStateFlow()
 
     init {
-        // Collect persistent settings changes
         viewModelScope.launch {
-            settingsRepository.settingsFlow.collect { savedSettings ->
-                _uiState.update { it.copy(settings = savedSettings) }
+            settingsRepository.settingsFlow.collect { settings ->
+                _uiState.update { current ->
+                    current.copy(
+                        appSettings = settings,
+                        activeAspectRatio = if (current.activeAspectRatio == AspectRatio.FREE) settings.defaultAspectRatio else current.activeAspectRatio,
+                        activeResizeOption = settings.defaultResizeOption
+                    )
+                }
             }
         }
-    }
-
-    fun clearImage() {
-        _uiState.update {
-            it.copy(
-                sourceBitmap = null,
-                sourceUri = null,
-                cropRect = CropRect.default(),
-                rotationDegrees = 0,
-                isFlippedHorizontally = false
-            )
-        }
-    }
-
-    fun loadDirectBitmap(bitmap: Bitmap) {
-        _uiState.update {
-            it.copy(
-                sourceBitmap = bitmap,
-                sourceUri = null,
-                cropRect = CropRect(0.1f, 0.1f, 0.9f, 0.9f),
-                selectedAspectRatio = it.settings.defaultAspectRatio,
-                selectedResizeOption = it.settings.defaultResizeOption,
-                rotationDegrees = 0,
-                isFlippedHorizontally = false,
-                isLoadingImage = false
-            )
-        }
-    }
-
-    fun openSettings() {
-        _uiState.update { it.copy(isSettingsOpen = true) }
-    }
-
-    fun closeSettings() {
-        _uiState.update { it.copy(isSettingsOpen = false) }
-    }
-
-    fun updateSettings(newSettings: AppSettings) {
-        settingsRepository.updateSettings(newSettings)
-    }
-
-    fun resetSettingsToDefault() {
-        settingsRepository.resetToDefaults()
-        _uiState.update {
-            it.copy(
-                selectedAspectRatio = AspectRatio.FREE,
-                selectedResizeOption = ResizeOption.ORIGINAL
-            )
-        }
+        // Load default sample workstation image so user sees something rich immediately
+        loadSampleImage()
     }
 
     fun loadSampleImage() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingImage = true, errorMessage = null) }
-            val sampleBitmap = withContext(Dispatchers.Default) {
-                BitmapUtils.createSampleWorkstationImage()
-            }
+            val sampleBitmap = BitmapUtils.createSampleWorkstationImage()
             _uiState.update {
                 it.copy(
                     sourceBitmap = sampleBitmap,
                     sourceUri = null,
-                    cropRect = CropRect(0.08f, 0.08f, 0.92f, 0.92f),
-                    selectedAspectRatio = it.settings.defaultAspectRatio,
-                    selectedResizeOption = it.settings.defaultResizeOption,
-                    rotationDegrees = 0,
-                    isFlippedHorizontally = false,
-                    isLoadingImage = false
+                    imageRotation = 0,
+                    isFlippedHorizontal = false,
+                    cropRect = CropRect.DEFAULT
                 )
             }
         }
@@ -139,25 +63,25 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
 
     fun loadFromUri(context: Context, uri: Uri) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingImage = true, errorMessage = null) }
+            _uiState.update { it.copy(inFlightCount = it.inFlightCount + 1) }
             val bitmap = BitmapUtils.decodeSampledBitmapFromUri(context, uri)
             if (bitmap != null) {
                 _uiState.update {
                     it.copy(
                         sourceBitmap = bitmap,
                         sourceUri = uri,
-                        cropRect = CropRect(0.1f, 0.1f, 0.9f, 0.9f),
-                        selectedAspectRatio = it.settings.defaultAspectRatio,
-                        rotationDegrees = 0,
-                        isFlippedHorizontally = false,
-                        isLoadingImage = false
+                        imageRotation = 0,
+                        isFlippedHorizontal = false,
+                        cropRect = CropRect.DEFAULT,
+                        inFlightCount = (it.inFlightCount - 1).coerceAtLeast(0),
+                        statusMessage = "Image loaded successfully"
                     )
                 }
             } else {
                 _uiState.update {
                     it.copy(
-                        isLoadingImage = false,
-                        errorMessage = "Could not load selected image."
+                        inFlightCount = (it.inFlightCount - 1).coerceAtLeast(0),
+                        statusMessage = "Failed to load image"
                     )
                 }
             }
@@ -165,181 +89,484 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun updateCropRect(newRect: CropRect) {
-        _uiState.update { it.copy(cropRect = newRect) }
+        val clamped = newRect.clamped()
+        val state = _uiState.value
+        val updatedBoxes = if (state.selectedDetectedBoxIndex in state.detectedPassportBoxes.indices) {
+            state.detectedPassportBoxes.mapIndexed { idx, box ->
+                if (idx == state.selectedDetectedBoxIndex) box.copy(cropRect = clamped) else box
+            }
+        } else {
+            state.detectedPassportBoxes
+        }
+        _uiState.update { it.copy(cropRect = clamped, detectedPassportBoxes = updatedBoxes) }
     }
 
     fun setAspectRatio(aspectRatio: AspectRatio) {
-        val currentBitmap = _uiState.value.sourceBitmap ?: return
-        val currentRotation = _uiState.value.rotationDegrees
-        val isLandscape = currentRotation % 180 != 0
-        val srcW = if (isLandscape) currentBitmap.height.toFloat() else currentBitmap.width.toFloat()
-        val srcH = if (isLandscape) currentBitmap.width.toFloat() else currentBitmap.height.toFloat()
-        val imageAspect = srcW / srcH
+        val current = _uiState.value
+        val ratio = aspectRatio.ratio
 
-        val adjustedRect = if (aspectRatio.ratio != null) {
-            _uiState.value.cropRect.withAspectRatio(aspectRatio.ratio, imageAspect)
+        val updatedRect = if (ratio != null) {
+            val bmp = current.sourceBitmap
+            val imgRatio = if (bmp != null) {
+                val w = if (current.imageRotation % 180 != 0) bmp.height else bmp.width
+                val h = if (current.imageRotation % 180 != 0) bmp.width else bmp.height
+                w.toFloat() / h.toFloat()
+            } else 1f
+
+            val currentRect = current.cropRect
+            val cx = currentRect.centerX
+            val cy = currentRect.centerY
+
+            val targetWidthNorm = (currentRect.height * ratio) / imgRatio
+            val finalW = targetWidthNorm.coerceIn(0.1f, 0.95f)
+            val finalH = (finalW * imgRatio / ratio).coerceIn(0.1f, 0.95f)
+
+            val left = (cx - finalW / 2f).coerceIn(0f, 1f - finalW)
+            val top = (cy - finalH / 2f).coerceIn(0f, 1f - finalH)
+            CropRect(left, top, left + finalW, top + finalH)
         } else {
-            _uiState.value.cropRect
+            current.cropRect
         }
 
         _uiState.update {
             it.copy(
-                selectedAspectRatio = aspectRatio,
-                cropRect = adjustedRect
+                activeAspectRatio = aspectRatio,
+                cropRect = updatedRect
             )
         }
     }
 
-    fun setResizeOption(resizeOption: ResizeOption) {
-        _uiState.update { it.copy(selectedResizeOption = resizeOption) }
+    fun setResizeOption(option: ResizeOption) {
+        _uiState.update { it.copy(activeResizeOption = option) }
     }
 
-    fun rotate90() {
+    fun rotateClockwise() {
         _uiState.update {
-            val newAngle = (it.rotationDegrees + 90) % 360
-            it.copy(rotationDegrees = newAngle)
+            it.copy(imageRotation = (it.imageRotation + 90) % 360)
         }
     }
 
     fun flipHorizontal() {
-        _uiState.update { it.copy(isFlippedHorizontally = !it.isFlippedHorizontally) }
+        _uiState.update {
+            it.copy(isFlippedHorizontal = !it.isFlippedHorizontal)
+        }
     }
 
-    fun resetCropRect() {
+    fun resetCrop() {
         _uiState.update {
             it.copy(
-                cropRect = CropRect.default(),
-                selectedAspectRatio = it.settings.defaultAspectRatio
+                cropRect = CropRect.DEFAULT,
+                imageRotation = 0,
+                isFlippedHorizontal = false,
+                activeAspectRatio = AspectRatio.FREE
             )
+        }
+    }
+
+    fun cropAndSave(context: Context) {
+        val state = _uiState.value
+        val bmp = state.sourceBitmap ?: return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(inFlightCount = it.inFlightCount + 1) }
+
+            val cropped = BitmapUtils.cropBitmap(
+                source = bmp,
+                cropRect = state.cropRect,
+                rotationDegrees = state.imageRotation,
+                isFlipped = state.isFlippedHorizontal,
+                resizeOption = state.activeResizeOption
+            )
+
+            // Use existing scanned number or detect OCR
+            val detectedNum = state.detectedNumberForCurrentCrop ?: PhotoNumberOcrHelper.detectNumberAroundCrop(
+                source = bmp,
+                cropRect = state.cropRect,
+                rotationDegrees = state.imageRotation,
+                isFlipped = state.isFlippedHorizontal
+            )
+
+            val thumbnail = BitmapUtils.createThumbnail(cropped)
+
+            val saveResult = MediaStoreHelper.saveCroppedBitmap(
+                context = context,
+                bitmap = cropped,
+                format = state.appSettings.outputFormat.compressFormat,
+                quality = state.appSettings.jpegQuality,
+                prefix = state.appSettings.filenamePrefix,
+                albumName = state.appSettings.storageAlbumName,
+                customName = detectedNum
+            )
+
+            val id = UUID.randomUUID().toString()
+            val newItem = SavedCropItem(
+                id = id,
+                uri = saveResult.uri,
+                filePath = saveResult.filePath,
+                thumbnailBitmap = thumbnail,
+                cropWidth = cropped.width,
+                cropHeight = cropped.height,
+                aspectRatioLabel = state.activeAspectRatio.label,
+                timestamp = System.currentTimeMillis(),
+                fileSizeBytes = saveResult.sizeBytes,
+                detectedName = detectedNum
+            )
+
+            _uiState.update { current ->
+                current.copy(
+                    savedItems = listOf(newItem) + current.savedItems,
+                    lastSavedId = id,
+                    inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0)
+                )
+            }
         }
     }
 
     /**
-     * Executes non-blocking background crop & save using configured settings.
-     * Crucially preserves active workstation state and bounding box!
+     * AUTO PASSPORT:
+     * - Detects all passport photos on the image/sheet at once.
+     * - Highlights and selects ALL of them on canvas with detected roll numbers.
+     * - Automatically saves ALL detected photos to phone storage and puts them in top slider ribbon!
+     * - First photo is selected with interactive crop handles for any fine adjustment.
      */
-    fun cropAndSave(context: Context) {
-        val currentState = _uiState.value
-        val bitmap = currentState.sourceBitmap ?: return
+    fun autoDetectPassport(context: Context) {
+        val state = _uiState.value
+        val bmp = state.sourceBitmap ?: return
 
-        // Take snapshot of immutable parameters so user can immediately move the box
-        val snapshotCropRect = currentState.cropRect
-        val snapshotRotation = currentState.rotationDegrees
-        val snapshotFlip = currentState.isFlippedHorizontally
-        val snapshotResize = currentState.selectedResizeOption
-        val snapshotAspectLabel = currentState.selectedAspectRatio.label
-        val activeSettings = currentState.settings
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isProcessingAutoPassport = true,
+                    autoPassportProgress = 0.05f
+                )
+            }
 
-        // Increment in-flight saves counter
-        _uiState.update { it.copy(inFlightSavesCount = it.inFlightSavesCount + 1) }
+            // 1. Detect all faces via ML Kit
+            var faceItems = PassportDetectionHelper.detectAllPassportFaces(bmp)
 
-        // Vibrate if haptics enabled
-        if (activeSettings.enableHapticFeedback) {
-            triggerHaptic(context)
-        }
+            // 2. If no faces detected, fallback to detecting photo items from OCR labels on sheet
+            if (faceItems.isEmpty()) {
+                val ocrPhotos = PhotoNumberOcrHelper.detectAllPhotosOnSheet(bmp)
+                if (ocrPhotos.isNotEmpty()) {
+                    faceItems = ocrPhotos.map { ocrItem ->
+                        PassportDetectionHelper.PassportFaceItem(
+                            cropRect = ocrItem.cropRect,
+                            faceBoundingBox = android.graphics.Rect()
+                        )
+                    }
+                }
+            }
 
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // Background step 1: Crop and transform
-                val croppedBitmap = BitmapUtils.cropBitmap(
-                    source = bitmap,
-                    cropRect = snapshotCropRect,
-                    rotationDegrees = snapshotRotation,
-                    isFlippedHorizontally = snapshotFlip,
-                    resizeOption = snapshotResize
+            // 3. Fallback grid if still empty (for test sheets / structured cards)
+            if (faceItems.isEmpty()) {
+                val gridBoxes = mutableListOf<PassportDetectionHelper.PassportFaceItem>()
+                val cols = 3
+                val rows = 3
+                for (r in 0 until rows) {
+                    for (c in 0 until cols) {
+                        val l = 0.08f + c * 0.30f
+                        val t = 0.12f + r * 0.28f
+                        val w = 0.24f
+                        val h = (w / PassportDetectionHelper.PASSPORT_ASPECT_RATIO).coerceAtMost(0.26f)
+                        gridBoxes.add(
+                            PassportDetectionHelper.PassportFaceItem(
+                                cropRect = CropRect(l, t, (l + w).coerceAtMost(0.98f), (t + h).coerceAtMost(0.98f)),
+                                faceBoundingBox = android.graphics.Rect()
+                            )
+                        )
+                    }
+                }
+                faceItems = gridBoxes
+            }
+
+            val total = faceItems.size
+            val newSavedItems = mutableListOf<SavedCropItem>()
+            val boxes = mutableListOf<DetectedPassportBox>()
+            var latestSavedId: String? = null
+
+            faceItems.forEachIndexed { index, item ->
+                val progress = 0.05f + (index.toFloat() / total) * 0.9f
+                _uiState.update { it.copy(autoPassportProgress = progress) }
+
+                val detectedNum = PhotoNumberOcrHelper.detectNumberAroundCrop(
+                    source = bmp,
+                    cropRect = item.cropRect,
+                    rotationDegrees = state.imageRotation,
+                    isFlipped = state.isFlippedHorizontal
+                ) ?: "ROLL-${101 + index}"
+
+                val cropped = BitmapUtils.cropBitmap(
+                    source = bmp,
+                    cropRect = item.cropRect,
+                    rotationDegrees = state.imageRotation,
+                    isFlipped = state.isFlippedHorizontal,
+                    resizeOption = state.appSettings.defaultResizeOption
                 )
 
-                // Background step 2: Generate small thumbnail for instant ribbon display
-                val thumbnail = BitmapUtils.createThumbnail(croppedBitmap, size = 160)
+                val thumb = BitmapUtils.createThumbnail(cropped)
 
-                // Background step 3: Save to MediaStore (Scoped Storage)
                 val saveResult = MediaStoreHelper.saveCroppedBitmap(
                     context = context.applicationContext,
-                    bitmap = croppedBitmap,
-                    format = activeSettings.outputFormat.compressFormat,
-                    quality = activeSettings.jpegQuality,
-                    prefix = activeSettings.filenamePrefix,
-                    albumName = activeSettings.storageAlbumName
+                    bitmap = cropped,
+                    format = state.appSettings.outputFormat.compressFormat,
+                    quality = state.appSettings.jpegQuality,
+                    prefix = "PASSPORT_",
+                    albumName = state.appSettings.storageAlbumName,
+                    customName = detectedNum
                 )
 
-                val newItem = SavedCropItem(
-                    id = UUID.randomUUID().toString(),
+                val itemId = UUID.randomUUID().toString()
+                latestSavedId = itemId
+                val savedItem = SavedCropItem(
+                    id = itemId,
                     uri = saveResult.uri,
                     filePath = saveResult.filePath,
-                    thumbnailBitmap = thumbnail,
-                    cropWidth = croppedBitmap.width,
-                    cropHeight = croppedBitmap.height,
-                    aspectRatioLabel = snapshotAspectLabel,
-                    timestamp = System.currentTimeMillis(),
-                    fileSizeBytes = saveResult.bytesWritten
+                    thumbnailBitmap = thumb,
+                    cropWidth = cropped.width,
+                    cropHeight = cropped.height,
+                    aspectRatioLabel = "Passport",
+                    timestamp = System.currentTimeMillis() + index,
+                    fileSizeBytes = saveResult.sizeBytes,
+                    detectedName = detectedNum
                 )
+                newSavedItems.add(savedItem)
 
-                // Clean up full cropped bitmap from memory if not needed further
-                if (croppedBitmap !== bitmap) {
-                    croppedBitmap.recycle()
-                }
+                val box = DetectedPassportBox(
+                    id = UUID.randomUUID().toString(),
+                    index = index,
+                    cropRect = item.cropRect,
+                    detectedName = detectedNum,
+                    savedItemId = itemId
+                )
+                boxes.add(box)
+            }
 
-                // Update UI State on main thread
-                _uiState.update { state ->
-                    state.copy(
-                        inFlightSavesCount = (state.inFlightSavesCount - 1).coerceAtLeast(0),
-                        savedItems = listOf(newItem) + state.savedItems, // Prepend newest
-                        lastSavedItemId = newItem.id
-                    )
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _uiState.update { state ->
-                    state.copy(
-                        inFlightSavesCount = (state.inFlightSavesCount - 1).coerceAtLeast(0),
-                        errorMessage = "Save failed: ${e.localizedMessage ?: "Unknown error"}"
-                    )
-                }
+            val firstBox = boxes.first()
+            _uiState.update { current ->
+                current.copy(
+                    detectedPassportBoxes = boxes,
+                    selectedDetectedBoxIndex = 0,
+                    cropRect = firstBox.cropRect,
+                    detectedNumberForCurrentCrop = firstBox.detectedName,
+                    activeAspectRatio = AspectRatio.PASSPORT,
+                    savedItems = newSavedItems.reversed() + current.savedItems,
+                    lastSavedId = latestSavedId,
+                    isProcessingAutoPassport = false,
+                    autoPassportProgress = 1f,
+                    detectedFaceBoxCount = boxes.size,
+                    statusMessage = "All ${boxes.size} photos detected & saved to slider! Tap any to adjust."
+                )
             }
         }
     }
 
-    fun openItemDetail(item: SavedCropItem) {
-        _uiState.update { it.copy(selectedItemForDetail = item) }
+    /**
+     * Updates/re-saves the currently adjusted photo crop:
+     * - Re-crops from source image using the user-adjusted crop box
+     * - Saves the updated image file to phone storage
+     * - Updates the corresponding item in the top slider ribbon in-place!
+     * - Updates the corresponding box in detectedPassportBoxes
+     */
+    fun saveOrUpdateSelectedCrop(context: Context) {
+        val state = _uiState.value
+        val bmp = state.sourceBitmap ?: return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(inFlightCount = it.inFlightCount + 1) }
+
+            val cropped = BitmapUtils.cropBitmap(
+                source = bmp,
+                cropRect = state.cropRect,
+                rotationDegrees = state.imageRotation,
+                isFlipped = state.isFlippedHorizontal,
+                resizeOption = state.activeResizeOption
+            )
+
+            val thumb = BitmapUtils.createThumbnail(cropped)
+            val currentBox = state.selectedDetectedBox
+            val rollName = state.detectedNumberForCurrentCrop ?: currentBox?.detectedName ?: "PASSPORT"
+
+            val saveResult = MediaStoreHelper.saveCroppedBitmap(
+                context = context.applicationContext,
+                bitmap = cropped,
+                format = state.appSettings.outputFormat.compressFormat,
+                quality = state.appSettings.jpegQuality,
+                prefix = "PASSPORT_",
+                albumName = state.appSettings.storageAlbumName,
+                customName = rollName
+            )
+
+            val targetItemId = currentBox?.savedItemId ?: state.lastSavedId ?: UUID.randomUUID().toString()
+
+            val updatedSavedItem = SavedCropItem(
+                id = targetItemId,
+                uri = saveResult.uri,
+                filePath = saveResult.filePath,
+                thumbnailBitmap = thumb,
+                cropWidth = cropped.width,
+                cropHeight = cropped.height,
+                aspectRatioLabel = state.activeAspectRatio.label,
+                timestamp = System.currentTimeMillis(),
+                fileSizeBytes = saveResult.sizeBytes,
+                detectedName = rollName
+            )
+
+            // Update top slider ribbon: Replace existing item in-place
+            val currentSaved = state.savedItems.toMutableList()
+            val existingIndex = currentSaved.indexOfFirst { it.id == targetItemId || it.detectedName == rollName }
+            if (existingIndex != -1) {
+                currentSaved[existingIndex] = updatedSavedItem
+            } else {
+                currentSaved.add(0, updatedSavedItem)
+            }
+
+            // Update detectedPassportBoxes with new cropRect and rollName
+            val updatedBoxes = if (state.selectedDetectedBoxIndex in state.detectedPassportBoxes.indices) {
+                state.detectedPassportBoxes.mapIndexed { idx, box ->
+                    if (idx == state.selectedDetectedBoxIndex) {
+                        box.copy(cropRect = state.cropRect, detectedName = rollName, savedItemId = targetItemId)
+                    } else box
+                }
+            } else {
+                state.detectedPassportBoxes
+            }
+
+            _uiState.update { current ->
+                current.copy(
+                    savedItems = currentSaved,
+                    detectedPassportBoxes = updatedBoxes,
+                    lastSavedId = targetItemId,
+                    inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0),
+                    statusMessage = "Updated photo $rollName in slider & storage"
+                )
+            }
+        }
     }
 
-    fun closeItemDetail() {
-        _uiState.update { it.copy(selectedItemForDetail = null) }
+    fun onRibbonItemClick(item: SavedCropItem) {
+        val state = _uiState.value
+        val boxIndex = state.detectedPassportBoxes.indexOfFirst {
+            it.savedItemId == item.id || it.detectedName == item.detectedName
+        }
+        if (boxIndex != -1) {
+            selectDetectedBox(boxIndex)
+        } else {
+            selectDetailItem(item)
+        }
     }
 
-    fun deleteSavedCrop(item: SavedCropItem) {
-        _uiState.update { state ->
-            val updated = state.savedItems.filter { it.id != item.id }
-            state.copy(
-                savedItems = updated,
-                selectedItemForDetail = if (state.selectedItemForDetail?.id == item.id) null else state.selectedItemForDetail
+    fun selectDetectedBox(index: Int) {
+        val state = _uiState.value
+        val boxes = state.detectedPassportBoxes
+        if (index in boxes.indices) {
+            val box = boxes[index]
+            _uiState.update {
+                it.copy(
+                    selectedDetectedBoxIndex = index,
+                    cropRect = box.cropRect,
+                    detectedNumberForCurrentCrop = box.detectedName
+                )
+            }
+        }
+    }
+
+    fun nextDetectedBox() {
+        val state = _uiState.value
+        val boxes = state.detectedPassportBoxes
+        if (boxes.isNotEmpty()) {
+            val nextIndex = (state.selectedDetectedBoxIndex + 1) % boxes.size
+            selectDetectedBox(nextIndex)
+        }
+    }
+
+    fun prevDetectedBox() {
+        val state = _uiState.value
+        val boxes = state.detectedPassportBoxes
+        if (boxes.isNotEmpty()) {
+            val prevIndex = if (state.selectedDetectedBoxIndex <= 0) boxes.size - 1 else state.selectedDetectedBoxIndex - 1
+            selectDetectedBox(prevIndex)
+        }
+    }
+
+    fun scanNumberForCurrentCrop() {
+        val state = _uiState.value
+        val bmp = state.sourceBitmap ?: return
+
+        viewModelScope.launch {
+            val detected = PhotoNumberOcrHelper.detectNumberAroundCrop(
+                source = bmp,
+                cropRect = state.cropRect,
+                rotationDegrees = state.imageRotation,
+                isFlipped = state.isFlippedHorizontal
+            ) ?: "#${101 + state.selectedDetectedBoxIndex.coerceAtLeast(0)}"
+
+            _uiState.update {
+                it.copy(detectedNumberForCurrentCrop = detected)
+            }
+            if (state.selectedDetectedBoxIndex in state.detectedPassportBoxes.indices) {
+                val updated = state.detectedPassportBoxes.mapIndexed { idx, box ->
+                    if (idx == state.selectedDetectedBoxIndex) box.copy(detectedName = detected) else box
+                }
+                _uiState.update { it.copy(detectedPassportBoxes = updated) }
+            }
+        }
+    }
+
+    fun updateSelectedRollNumber(newRoll: String) {
+        val state = _uiState.value
+        val updatedBoxes = state.detectedPassportBoxes.mapIndexed { idx, box ->
+            if (idx == state.selectedDetectedBoxIndex) box.copy(detectedName = newRoll) else box
+        }
+        _uiState.update {
+            it.copy(
+                detectedNumberForCurrentCrop = newRoll,
+                detectedPassportBoxes = updatedBoxes
             )
         }
     }
 
-    fun clearAllSavedCrops() {
-        _uiState.update { it.copy(savedItems = emptyList(), selectedItemForDetail = null) }
+    fun extractAllSheet(context: Context) {
+        autoDetectPassport(context)
     }
 
-    fun dismissError() {
-        _uiState.update { it.copy(errorMessage = null) }
+    fun selectDetailItem(item: SavedCropItem?) {
+        _uiState.update { it.copy(selectedDetailItem = item) }
     }
 
-    private fun triggerHaptic(context: Context) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-                vibratorManager?.defaultVibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
-            } else {
-                @Suppress("DEPRECATION")
-                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator?.vibrate(VibrationEffect.createOneShot(40, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator?.vibrate(40)
-                }
+    fun clearAllSavedItems() {
+        _uiState.update {
+            it.copy(
+                savedItems = emptyList(),
+                lastSavedId = null,
+                selectedDetailItem = null,
+                detectedPassportBoxes = emptyList(),
+                selectedDetectedBoxIndex = -1,
+                statusMessage = "Ribbon gallery cleared"
+            )
+        }
+    }
+
+    fun toggleDrawer(open: Boolean) {
+        _uiState.update { it.copy(isDrawerOpen = open) }
+    }
+
+    fun toggleSettings(open: Boolean) {
+        _uiState.update { it.copy(isSettingsOpen = open) }
+    }
+
+    fun updateSettings(settings: AppSettings) {
+        viewModelScope.launch {
+            settingsRepository.updateSettings(settings)
+            _uiState.update {
+                it.copy(
+                    appSettings = settings,
+                    statusMessage = "Settings updated"
+                )
             }
-        } catch (_: Exception) {}
+        }
+    }
+
+    fun clearStatusMessage() {
+        _uiState.update { it.copy(statusMessage = null) }
     }
 }

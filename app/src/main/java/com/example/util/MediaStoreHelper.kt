@@ -13,117 +13,98 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 object MediaStoreHelper {
 
     data class SaveResult(
         val uri: Uri?,
         val filePath: String?,
-        val bytesWritten: Long
+        val sizeBytes: Long
     )
 
-    /**
-     * Saves a cropped Bitmap to the device MediaStore / Pictures directory asynchronously.
-     */
     suspend fun saveCroppedBitmap(
         context: Context,
         bitmap: Bitmap,
-        format: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG,
-        quality: Int = 92,
+        format: Bitmap.CompressFormat,
+        quality: Int,
         prefix: String = "CROP_",
-        albumName: String = "ContinuousCrop"
+        albumName: String = "SnapCrop",
+        customName: String? = null
     ): SaveResult = withContext(Dispatchers.IO) {
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+        val resolver: ContentResolver = context.contentResolver
+        val timestamp = System.currentTimeMillis()
+
         val extension = when (format) {
             Bitmap.CompressFormat.PNG -> "png"
             Bitmap.CompressFormat.WEBP, Bitmap.CompressFormat.WEBP_LOSSY, Bitmap.CompressFormat.WEBP_LOSSLESS -> "webp"
             else -> "jpg"
         }
-        val mimeType = when (extension) {
-            "png" -> "image/png"
-            "webp" -> "image/webp"
+
+        val mimeType = when (format) {
+            Bitmap.CompressFormat.PNG -> "image/png"
+            Bitmap.CompressFormat.WEBP, Bitmap.CompressFormat.WEBP_LOSSY, Bitmap.CompressFormat.WEBP_LOSSLESS -> "image/webp"
             else -> "image/jpeg"
         }
-        val safePrefix = if (prefix.isNotBlank()) prefix else "CROP_"
-        val safeAlbum = if (albumName.isNotBlank()) albumName else "ContinuousCrop"
-        val displayName = "${safePrefix}${timestamp}.$extension"
 
-        val resolver: ContentResolver = context.contentResolver
+        val sanitizedCustom = customName?.replace(Regex("[^a-zA-Z0-9_-]"), "_")?.take(30)
+        val filename = if (!sanitizedCustom.isNullOrBlank()) {
+            "${sanitizedCustom}_${timestamp}.$extension"
+        } else {
+            "${prefix}${timestamp}.$extension"
+        }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$safeAlbum")
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
+        var savedUri: Uri? = null
+        var writtenBytes = 0L
 
-            val imageUri: Uri? = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-            var bytesWritten = 0L
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, filename)
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$albumName")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
 
-            if (imageUri != null) {
-                try {
-                    resolver.openOutputStream(imageUri)?.use { outStream: OutputStream ->
-                        bitmap.compress(format, quality, outStream)
-                        outStream.flush()
+                savedUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                savedUri?.let { uri ->
+                    resolver.openOutputStream(uri)?.use { outputStream: OutputStream ->
+                        bitmap.compress(format, quality, outputStream)
                     }
 
-                    // Retrieve actual size
-                    resolver.openFileDescriptor(imageUri, "r")?.use { pfd ->
-                        bytesWritten = pfd.statSize
-                    }
-
-                    // Mark as no longer pending
                     contentValues.clear()
-                    contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(imageUri, contentValues, null, null)
+                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    resolver.update(uri, contentValues, null, null)
 
-                    return@withContext SaveResult(
-                        uri = imageUri,
-                        filePath = "Pictures/$safeAlbum/$displayName",
-                        bytesWritten = bytesWritten
-                    )
-                } catch (e: Exception) {
-                    resolver.delete(imageUri, null, null)
-                    throw e
+                    resolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                        writtenBytes = pfd.statSize
+                    }
                 }
             } else {
-                throw IllegalStateException("Failed to create MediaStore entry for cropped image")
-            }
-        } else {
-            // Android 9 and below
-            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val albumDir = File(picturesDir, safeAlbum)
-            if (!albumDir.exists()) {
-                albumDir.mkdirs()
-            }
-            val destinationFile = File(albumDir, displayName)
-            var bytesWritten = 0L
+                val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                val appDir = File(picturesDir, albumName)
+                if (!appDir.exists()) {
+                    appDir.mkdirs()
+                }
+                val destFile = File(appDir, filename)
+                FileOutputStream(destFile).use { outputStream ->
+                    bitmap.compress(format, quality, outputStream)
+                }
+                writtenBytes = destFile.length()
 
-            FileOutputStream(destinationFile).use { outStream ->
-                bitmap.compress(format, quality, outStream)
-                outStream.flush()
-                bytesWritten = destinationFile.length()
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DATA, destFile.absolutePath)
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                }
+                savedUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             }
-
-            // Also insert into MediaStore so it appears in the device gallery immediately
-            val contentValues = ContentValues().apply {
-                put(MediaStore.Images.Media.TITLE, displayName)
-                put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-                put(MediaStore.Images.Media.DESCRIPTION, "Continuous crop image")
-                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                put(MediaStore.Images.Media.DATA, destinationFile.absolutePath)
-            }
-            val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-
-            return@withContext SaveResult(
-                uri = imageUri ?: Uri.fromFile(destinationFile),
-                filePath = destinationFile.absolutePath,
-                bytesWritten = bytesWritten
-            )
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+
+        SaveResult(
+            uri = savedUri,
+            filePath = filename,
+            sizeBytes = writtenBytes
+        )
     }
 }

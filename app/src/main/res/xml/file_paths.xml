@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="camera_photos" path="camera_photos/" />
+    <cache-path name="shares" path="shares/" />
+    <cache-path name="all_cache" path="." />
     <external-cache-path name="camera_photos_ext" path="camera_photos/" />
+    <external-files-path name="external_files" path="." />
 </paths>

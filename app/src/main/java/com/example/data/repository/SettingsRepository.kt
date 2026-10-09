@@ -1,93 +1,83 @@
 package com.example.data.repository
 
 import android.content.Context
-import android.content.SharedPreferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import com.example.data.model.AppSettings
 import com.example.data.model.AspectRatio
 import com.example.data.model.GridDisplayMode
 import com.example.data.model.OutputImageFormat
 import com.example.data.model.ResizeOption
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
-class SettingsRepository(context: Context) {
+private val Context.dataStore by preferencesDataStore(name = "snapcrop_settings")
 
-    private val prefs: SharedPreferences = context.getSharedPreferences("continuous_crop_settings", Context.MODE_PRIVATE)
+class SettingsRepository(private val context: Context) {
 
-    private val _settingsFlow = MutableStateFlow(loadSettings())
-    val settingsFlow: StateFlow<AppSettings> = _settingsFlow.asStateFlow()
+    private object PreferencesKeys {
+        val OUTPUT_FORMAT = stringPreferencesKey("output_format")
+        val JPEG_QUALITY = intPreferencesKey("jpeg_quality")
+        val DEFAULT_ASPECT_RATIO = stringPreferencesKey("default_aspect_ratio")
+        val DEFAULT_RESIZE_OPTION = stringPreferencesKey("default_resize_option")
+        val GRID_MODE = stringPreferencesKey("grid_mode")
+        val SHOW_DIMENSION_BADGE = booleanPreferencesKey("show_dimension_badge")
+        val ENABLE_HAPTIC = booleanPreferencesKey("enable_haptic")
+        val AUTO_SCROLL_RIBBON = booleanPreferencesKey("auto_scroll_ribbon")
+        val FILENAME_PREFIX = stringPreferencesKey("filename_prefix")
+        val ALBUM_NAME = stringPreferencesKey("album_name")
+    }
 
-    private fun loadSettings(): AppSettings {
-        val formatName = prefs.getString("output_format", OutputImageFormat.JPEG.name) ?: OutputImageFormat.JPEG.name
-        val outputFormat = try {
-            OutputImageFormat.valueOf(formatName)
-        } catch (_: Exception) {
-            OutputImageFormat.JPEG
-        }
+    val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { preferences ->
+        val formatStr = preferences[PreferencesKeys.OUTPUT_FORMAT] ?: OutputImageFormat.JPEG.name
+        val format = try { OutputImageFormat.valueOf(formatStr) } catch (_: Exception) { OutputImageFormat.JPEG }
 
-        val quality = prefs.getInt("jpeg_quality", 92)
+        val quality = preferences[PreferencesKeys.JPEG_QUALITY] ?: 95
 
-        val ratioName = prefs.getString("default_ratio", AspectRatio.FREE.name) ?: AspectRatio.FREE.name
-        val defaultRatio = try {
-            AspectRatio.valueOf(ratioName)
-        } catch (_: Exception) {
-            AspectRatio.FREE
-        }
+        val aspectStr = preferences[PreferencesKeys.DEFAULT_ASPECT_RATIO] ?: AspectRatio.FREE.name
+        val aspect = try { AspectRatio.valueOf(aspectStr) } catch (_: Exception) { AspectRatio.FREE }
 
-        val resizeName = prefs.getString("default_resize", ResizeOption.ORIGINAL.name) ?: ResizeOption.ORIGINAL.name
-        val defaultResize = try {
-            ResizeOption.valueOf(resizeName)
-        } catch (_: Exception) {
-            ResizeOption.ORIGINAL
-        }
+        val resizeStr = preferences[PreferencesKeys.DEFAULT_RESIZE_OPTION] ?: ResizeOption.ORIGINAL.name
+        val resize = try { ResizeOption.valueOf(resizeStr) } catch (_: Exception) { ResizeOption.ORIGINAL }
 
-        val gridModeName = prefs.getString("grid_mode", GridDisplayMode.ALWAYS.name) ?: GridDisplayMode.ALWAYS.name
-        val gridMode = try {
-            GridDisplayMode.valueOf(gridModeName)
-        } catch (_: Exception) {
-            GridDisplayMode.ALWAYS
-        }
+        val gridStr = preferences[PreferencesKeys.GRID_MODE] ?: GridDisplayMode.RULE_OF_THIRDS.name
+        val grid = try { GridDisplayMode.valueOf(gridStr) } catch (_: Exception) { GridDisplayMode.RULE_OF_THIRDS }
 
-        val showDimensionBadge = prefs.getBoolean("show_dimension_badge", true)
-        val enableHaptics = prefs.getBoolean("enable_haptics", true)
-        val autoScrollRibbon = prefs.getBoolean("auto_scroll_ribbon", true)
-        val prefix = prefs.getString("filename_prefix", "CROP_") ?: "CROP_"
-        val album = prefs.getString("storage_album", "ContinuousCrop") ?: "ContinuousCrop"
+        val showBadge = preferences[PreferencesKeys.SHOW_DIMENSION_BADGE] ?: true
+        val haptic = preferences[PreferencesKeys.ENABLE_HAPTIC] ?: true
+        val autoScroll = preferences[PreferencesKeys.AUTO_SCROLL_RIBBON] ?: true
+        val prefix = preferences[PreferencesKeys.FILENAME_PREFIX] ?: "CROP_"
+        val album = preferences[PreferencesKeys.ALBUM_NAME] ?: "SnapCrop"
 
-        return AppSettings(
-            outputFormat = outputFormat,
+        AppSettings(
+            outputFormat = format,
             jpegQuality = quality,
-            defaultAspectRatio = defaultRatio,
-            defaultResizeOption = defaultResize,
-            showRuleOfThirdsGrid = gridMode,
-            showDimensionBadge = showDimensionBadge,
-            enableHapticFeedback = enableHaptics,
-            autoScrollRibbon = autoScrollRibbon,
+            defaultAspectRatio = aspect,
+            defaultResizeOption = resize,
+            showRuleOfThirdsGrid = grid,
+            showDimensionBadge = showBadge,
+            enableHapticFeedback = haptic,
+            autoScrollRibbon = autoScroll,
             filenamePrefix = prefix,
             storageAlbumName = album
         )
     }
 
-    fun updateSettings(newSettings: AppSettings) {
-        prefs.edit().apply {
-            putString("output_format", newSettings.outputFormat.name)
-            putInt("jpeg_quality", newSettings.jpegQuality)
-            putString("default_ratio", newSettings.defaultAspectRatio.name)
-            putString("default_resize", newSettings.defaultResizeOption.name)
-            putString("grid_mode", newSettings.showRuleOfThirdsGrid.name)
-            putBoolean("show_dimension_badge", newSettings.showDimensionBadge)
-            putBoolean("enable_haptics", newSettings.enableHapticFeedback)
-            putBoolean("auto_scroll_ribbon", newSettings.autoScrollRibbon)
-            putString("filename_prefix", newSettings.filenamePrefix)
-            putString("storage_album", newSettings.storageAlbumName)
-            apply()
+    suspend fun updateSettings(settings: AppSettings) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.OUTPUT_FORMAT] = settings.outputFormat.name
+            preferences[PreferencesKeys.JPEG_QUALITY] = settings.jpegQuality
+            preferences[PreferencesKeys.DEFAULT_ASPECT_RATIO] = settings.defaultAspectRatio.name
+            preferences[PreferencesKeys.DEFAULT_RESIZE_OPTION] = settings.defaultResizeOption.name
+            preferences[PreferencesKeys.GRID_MODE] = settings.showRuleOfThirdsGrid.name
+            preferences[PreferencesKeys.SHOW_DIMENSION_BADGE] = settings.showDimensionBadge
+            preferences[PreferencesKeys.ENABLE_HAPTIC] = settings.enableHapticFeedback
+            preferences[PreferencesKeys.AUTO_SCROLL_RIBBON] = settings.autoScrollRibbon
+            preferences[PreferencesKeys.FILENAME_PREFIX] = settings.filenamePrefix
+            preferences[PreferencesKeys.ALBUM_NAME] = settings.storageAlbumName
         }
-        _settingsFlow.value = newSettings
-    }
-
-    fun resetToDefaults() {
-        val defaults = AppSettings()
-        updateSettings(defaults)
     }
 }

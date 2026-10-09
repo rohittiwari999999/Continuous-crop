@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="white">#FFFFFFFF</color>
+    <string name="app_name">SnapCrop</string>
+    <string name="aspect_ratio_16_9">16:9</string>
+    <string name="aspect_ratio_3_4">3:4</string>
+    <string name="aspect_ratio_4_3">4:3</string>
+    <string name="aspect_ratio_9_16">9:16</string>
+    <string name="aspect_ratio_free">Free</string>
+    <string name="aspect_ratio_square">1:1</string>
+    <string name="crop_and_save">Crop &amp; Save</string>
+    <string name="pick_image">Open Image</string>
+    <string name="saved_items">Saved Crops</string>
+    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar"/>
+</resources>
