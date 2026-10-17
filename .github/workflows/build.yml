@@ -30,10 +30,23 @@ jobs:
 
       - name: Ensure Signing Keystore Exists
         run: |
-          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
+          if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore
-            echo "Keystore decoded successfully."
+            echo "Keystore decoded from base64."
           fi
+          if [ ! -f debug.keystore ]; then
+            echo "Generating debug.keystore via keytool..."
+            keytool -genkey -v -keystore debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+            echo "Keystore generated successfully."
+          fi
+          ls -lh debug.keystore
 
       - name: Build Release APK and Play Store AAB
         run: |
