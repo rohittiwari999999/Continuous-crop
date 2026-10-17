@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.example.ui.ContinuousCropScreen
-import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.SnapCropTheme
 import com.example.ui.theme.WorkspaceBackground
 import com.example.ui.viewmodel.ContinuousCropViewModel
 
@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            SnapCropTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = WorkspaceBackground
