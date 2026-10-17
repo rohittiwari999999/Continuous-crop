@@ -37,6 +37,7 @@ data class ContinuousCropUiState(
     val isSettingsOpen: Boolean = false,
     val detectedPassportBoxes: List<DetectedPassportBox> = emptyList(),
     val selectedDetectedBoxIndex: Int = -1,
+    val selectedSavedItemId: String? = null,
     val detectedNumberForCurrentCrop: String? = null,
     val detectedFaceBoxCount: Int = 0,
     val appSettings: AppSettings = AppSettings()
@@ -55,4 +56,7 @@ data class ContinuousCropUiState(
 
     val selectedDetectedBox: DetectedPassportBox?
         get() = detectedPassportBoxes.getOrNull(selectedDetectedBoxIndex)
+
+    val isEditingExistingCrop: Boolean
+        get() = selectedSavedItemId != null || (selectedDetectedBoxIndex in detectedPassportBoxes.indices)
 }

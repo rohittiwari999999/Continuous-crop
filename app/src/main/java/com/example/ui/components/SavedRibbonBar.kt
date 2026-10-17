@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -66,7 +67,9 @@ fun SavedRibbonBar(
     isProcessingAutoPassport: Boolean = false,
     autoPassportProgress: Float = 0f,
     lastSavedId: String?,
+    selectedSavedItemId: String? = null,
     autoScroll: Boolean = true,
+    onBackClick: () -> Unit = {},
     onMenuClick: () -> Unit,
     onItemClick: (SavedCropItem) -> Unit,
     onClearAllClick: () -> Unit,
@@ -90,15 +93,27 @@ fun SavedRibbonBar(
         shadowElevation = 8.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Header row with stats & action icons
+            // Header row with Back, Menu, stats & action icons
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onBackClick,
+                        modifier = Modifier.size(36.dp).testTag("top_back_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     IconButton(
                         onClick = onMenuClick,
                         modifier = Modifier.size(36.dp).testTag("menu_drawer_button")
@@ -106,12 +121,12 @@ fun SavedRibbonBar(
                         Icon(
                             imageVector = Icons.Default.Menu,
                             contentDescription = "Menu Drawer",
-                            tint = TextPrimary,
+                            tint = TextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     Text(
                         text = "SnapCrop",
@@ -142,6 +157,26 @@ fun SavedRibbonBar(
                             tint = TextSecondary,
                             modifier = Modifier.size(18.dp)
                         )
+                    }
+
+                    // If editing a photo, show Editing Pill
+                    if (!selectedSavedItemId.isNullOrBlank()) {
+                        val activeItem = savedItems.firstOrNull { it.id == selectedSavedItemId }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(NeonCyan.copy(alpha = 0.18f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Editing: ${activeItem?.detectedName ?: "Photo"}",
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
                     }
 
                     if (inFlightCount > 0 || isProcessingAutoPassport) {
@@ -211,8 +246,10 @@ fun SavedRibbonBar(
                         items = savedItems,
                         key = { it.id }
                     ) { item ->
+                        val isSelected = item.id == selectedSavedItemId
                         SavedCropThumbnailCard(
                             item = item,
+                            isSelected = isSelected,
                             isLatest = item.id == lastSavedId,
                             onClick = { onItemClick(item) }
                         )
@@ -226,11 +263,16 @@ fun SavedRibbonBar(
 @Composable
 private fun SavedCropThumbnailCard(
     item: SavedCropItem,
+    isSelected: Boolean,
     isLatest: Boolean,
     onClick: () -> Unit
 ) {
-    val borderColor = if (isLatest) NeonCyan else WorkspaceBorder
-    val borderWidth = if (isLatest) 2.dp else 1.dp
+    val borderColor = when {
+        isSelected -> NeonCyan
+        isLatest -> AccentTeal
+        else -> WorkspaceBorder
+    }
+    val borderWidth = if (isSelected) 2.5.dp else if (isLatest) 1.5.dp else 1.dp
 
     Box(
         modifier = Modifier

@@ -112,7 +112,7 @@ fun CropOverlayCanvas(
                                 val normY = ((startOffset.y - imgRect.top) / imgRect.height).coerceIn(0f, 1f)
 
                                 val handle = hitTestHandle(normX, normY, cropRect, imgRect.width, imgRect.height)
-                                if (handle == CropHandle.NONE && detectedPassportBoxes.isNotEmpty()) {
+                                if (handle == CropHandle.NONE) {
                                     val tappedBox = detectedPassportBoxes.firstOrNull { box ->
                                         normX in box.cropRect.left..box.cropRect.right &&
                                         normY in box.cropRect.top..box.cropRect.bottom
@@ -121,7 +121,14 @@ fun CropOverlayCanvas(
                                         onSelectDetectedBox(tappedBox.index)
                                         activeHandle = CropHandle.NONE
                                     } else {
-                                        activeHandle = CropHandle.NONE
+                                        // Center crop box on the tapped random person/area
+                                        val w = cropRect.width
+                                        val h = cropRect.height
+                                        val newL = (normX - w / 2f).coerceIn(0f, 1f - w)
+                                        val newT = (normY - h / 2f).coerceIn(0f, 1f - h)
+                                        val repositioned = CropRect(newL, newT, newL + w, newT + h)
+                                        onCropRectChange(repositioned)
+                                        activeHandle = CropHandle.INSIDE
                                     }
                                 } else {
                                     activeHandle = handle

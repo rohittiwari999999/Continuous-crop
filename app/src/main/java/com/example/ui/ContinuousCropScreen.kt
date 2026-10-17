@@ -64,10 +64,12 @@ fun ContinuousCropScreen(
     }
 
     // Back handling
-    BackHandler(enabled = drawerState.isOpen || uiState.isSettingsOpen || uiState.selectedDetailItem != null) {
+    val isEditing = uiState.isEditingExistingCrop
+    BackHandler(enabled = drawerState.isOpen || uiState.isSettingsOpen || uiState.selectedDetailItem != null || isEditing) {
         when {
             uiState.selectedDetailItem != null -> viewModel.selectDetailItem(null)
             uiState.isSettingsOpen -> viewModel.toggleSettings(false)
+            isEditing -> viewModel.deselectActiveEdit()
             drawerState.isOpen -> scope.launch { drawerState.close() }
         }
     }
@@ -101,7 +103,17 @@ fun ContinuousCropScreen(
                     isProcessingAutoPassport = uiState.isProcessingAutoPassport,
                     autoPassportProgress = uiState.autoPassportProgress,
                     lastSavedId = uiState.lastSavedId,
+                    selectedSavedItemId = uiState.selectedSavedItemId,
                     autoScroll = uiState.appSettings.autoScrollRibbon,
+                    onBackClick = {
+                        when {
+                            uiState.selectedDetailItem != null -> viewModel.selectDetailItem(null)
+                            uiState.isSettingsOpen -> viewModel.toggleSettings(false)
+                            isEditing -> viewModel.deselectActiveEdit()
+                            drawerState.isOpen -> scope.launch { drawerState.close() }
+                            else -> viewModel.resetCrop()
+                        }
+                    },
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onItemClick = { item -> viewModel.onRibbonItemClick(item) },
                     onClearAllClick = { viewModel.clearAllSavedItems() },
@@ -113,6 +125,7 @@ fun ContinuousCropScreen(
                     hasImage = uiState.hasImage,
                     activeAspectRatio = uiState.activeAspectRatio,
                     isProcessingAutoPassport = uiState.isProcessingAutoPassport,
+                    isEditing = isEditing,
                     detectedBoxCount = uiState.detectedPassportBoxes.size,
                     selectedBoxIndex = uiState.selectedDetectedBoxIndex,
                     currentScannedNumber = uiState.detectedNumberForCurrentCrop,
@@ -126,7 +139,7 @@ fun ContinuousCropScreen(
                         viewModel.autoDetectPassport(context)
                     },
                     onCropAndSaveClick = {
-                        if (uiState.detectedPassportBoxes.isNotEmpty() && uiState.selectedDetectedBoxIndex in uiState.detectedPassportBoxes.indices) {
+                        if (isEditing) {
                             viewModel.saveOrUpdateSelectedCrop(context)
                         } else {
                             viewModel.cropAndSave(context)

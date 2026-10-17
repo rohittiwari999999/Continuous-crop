@@ -13,7 +13,8 @@ data class SavedCropItem(
     val aspectRatioLabel: String,
     val timestamp: Long,
     val fileSizeBytes: Long = 0L,
-    val detectedName: String? = null
+    val detectedName: String? = null,
+    val cropRect: CropRect? = null
 ) {
     val formattedDimensions: String
         get() = "${cropWidth}×${cropHeight}"

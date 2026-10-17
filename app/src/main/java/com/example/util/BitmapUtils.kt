@@ -65,43 +65,38 @@ object BitmapUtils {
         isFlipped: Boolean = false,
         resizeOption: ResizeOption = ResizeOption.ORIGINAL
     ): Bitmap = withContext(Dispatchers.Default) {
-        val srcW = source.width
-        val srcH = source.height
+        val oriented = if (rotationDegrees != 0 || isFlipped) {
+            val matrix = Matrix()
+            if (isFlipped) matrix.postScale(-1f, 1f)
+            if (rotationDegrees != 0) matrix.postRotate(rotationDegrees.toFloat())
+            Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+        } else {
+            source
+        }
+
+        val srcW = oriented.width
+        val srcH = oriented.height
 
         val leftPx = (cropRect.left * srcW).roundToInt().coerceIn(0, srcW - 1)
         val topPx = (cropRect.top * srcH).roundToInt().coerceIn(0, srcH - 1)
         val widthPx = ((cropRect.right - cropRect.left) * srcW).roundToInt().coerceIn(1, srcW - leftPx)
         val heightPx = ((cropRect.bottom - cropRect.top) * srcH).roundToInt().coerceIn(1, srcH - topPx)
 
-        val cropped = Bitmap.createBitmap(source, leftPx, topPx, widthPx, heightPx)
+        val cropped = Bitmap.createBitmap(oriented, leftPx, topPx, widthPx, heightPx)
 
-        val matrix = Matrix()
-        if (isFlipped) {
-            matrix.postScale(-1f, 1f, cropped.width / 2f, cropped.height / 2f)
-        }
-        if (rotationDegrees != 0) {
-            matrix.postRotate(rotationDegrees.toFloat())
+        if (oriented != source) {
+            oriented.recycle()
         }
 
-        val transformed = if (rotationDegrees != 0 || isFlipped) {
-            val rotated = Bitmap.createBitmap(cropped, 0, 0, cropped.width, cropped.height, matrix, true)
-            if (rotated != cropped) {
+        val (targetW, targetH) = resizeOption.calculateTargetDimensions(cropped.width, cropped.height)
+        if (targetW != cropped.width || targetH != cropped.height) {
+            val resized = Bitmap.createScaledBitmap(cropped, targetW, targetH, true)
+            if (resized != cropped) {
                 cropped.recycle()
-            }
-            rotated
-        } else {
-            cropped
-        }
-
-        val (targetW, targetH) = resizeOption.calculateTargetDimensions(transformed.width, transformed.height)
-        if (targetW != transformed.width || targetH != transformed.height) {
-            val resized = Bitmap.createScaledBitmap(transformed, targetW, targetH, true)
-            if (resized != transformed) {
-                transformed.recycle()
             }
             resized
         } else {
-            transformed
+            cropped
         }
     }
 

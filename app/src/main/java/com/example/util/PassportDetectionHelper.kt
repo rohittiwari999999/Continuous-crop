@@ -21,9 +21,10 @@ object PassportDetectionHelper {
     private val faceDetector: FaceDetector by lazy {
         val options = FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
-            .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+            .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
             .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
-            .setMinFaceSize(0.05f) // Support small faces on sheets/grids
+            .setContourMode(FaceDetectorOptions.CONTOUR_MODE_NONE)
+            .setMinFaceSize(0.015f) // Support small faces on multi-photo sheets
             .build()
         FaceDetection.getClient(options)
     }
@@ -95,11 +96,22 @@ object PassportDetectionHelper {
     }
 
     suspend fun detectAllPassportFaces(
-        source: Bitmap
+        source: Bitmap,
+        rotationDegrees: Int = 0,
+        isFlipped: Boolean = false
     ): List<PassportFaceItem> = withContext(Dispatchers.Default) {
-        val srcW = source.width
-        val srcH = source.height
-        val image = InputImage.fromBitmap(source, 0)
+        val oriented = if (rotationDegrees != 0 || isFlipped) {
+            val matrix = Matrix()
+            if (isFlipped) matrix.postScale(-1f, 1f)
+            if (rotationDegrees != 0) matrix.postRotate(rotationDegrees.toFloat())
+            Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+        } else {
+            source
+        }
+
+        val srcW = oriented.width
+        val srcH = oriented.height
+        val image = InputImage.fromBitmap(oriented, 0)
 
         val mlFaces: List<Face> = suspendCancellableCoroutine { continuation ->
             faceDetector.process(image)
@@ -112,11 +124,32 @@ object PassportDetectionHelper {
                 }
         }
 
-        if (mlFaces.isEmpty()) {
-            return@withContext emptyList()
+        if (oriented != source) {
+            oriented.recycle()
         }
 
-        // Sort faces reading-order: top-to-bottom, left-to-right (grid row tolerance)
+        if (mlFaces.isEmpty()) {
+            // If ML Kit doesn't detect any face, create ONE real centered passport box (3.5x4.5 ratio)
+            // NEVER generate fake 9-grid boxes
+            val imageAspect = srcW.toFloat() / srcH.toFloat()
+            var normW = 0.65f.coerceAtMost(0.92f)
+            var normH = (normW * imageAspect) / PASSPORT_ASPECT_RATIO
+            if (normH > 0.88f) {
+                normH = 0.88f
+                normW = (normH * PASSPORT_ASPECT_RATIO) / imageAspect
+            }
+            val left = ((1f - normW) / 2f).coerceIn(0f, 0.95f)
+            val top = 0.06f.coerceIn(0f, (1f - normH).coerceAtLeast(0f))
+            val fallbackRect = CropRect(left, top, (left + normW).coerceAtMost(1f), (top + normH).coerceAtMost(1f))
+            return@withContext listOf(
+                PassportFaceItem(
+                    cropRect = fallbackRect,
+                    faceBoundingBox = Rect((left * srcW).toInt(), (top * srcH).toInt(), ((left + normW) * srcW).toInt(), ((top + normH) * srcH).toInt())
+                )
+            )
+        }
+
+        // Sort faces in natural reading order: top-to-bottom, left-to-right
         val sortedFaces = mlFaces.sortedWith { f1, f2 ->
             val b1 = f1.boundingBox
             val b2 = f2.boundingBox
@@ -130,30 +163,56 @@ object PassportDetectionHelper {
 
         sortedFaces.map { face ->
             val box = face.boundingBox
-
-            // Head height estimation:
-            // Standard passport photo rules: Head (crown to chin) should be 70% - 80% of total height.
-            // Face box from ML Kit covers roughly eyebrows/forehead to chin.
-            val faceH = box.height().toFloat()
-            val faceW = box.width().toFloat()
+            val faceH = box.height().toFloat().coerceAtLeast(10f)
             val faceCenterX = box.centerX().toFloat()
-            val faceCenterY = box.centerY().toFloat()
 
-            // Photo height should be approx 1.8x - 2.0x of the detected face box height
-            val photoHeightPx = faceH * 1.95f
-            val photoWidthPx = photoHeightPx * PASSPORT_ASPECT_RATIO
+            // Standard passport photo framing:
+            // Full head (crown of hair to chin) should be ~70-75% of the photo height.
+            // ML Kit bounding box covers forehead to chin.
+            // Total photo height should be ~1.75x of face box height to capture hair, crown, and collar/shoulders.
+            var photoHeightPx = faceH * 1.75f
+            var photoWidthPx = photoHeightPx * PASSPORT_ASPECT_RATIO
 
-            // Headroom above face: ~15% of photo height above top of face box
-            val photoTopPx = (box.top.toFloat() - photoHeightPx * 0.18f).coerceAtLeast(0f)
-            val photoBottomPx = (photoTopPx + photoHeightPx).coerceAtMost(srcH.toFloat())
-            val actualHeightPx = photoBottomPx - photoTopPx
-            val actualWidthPx = actualHeightPx * PASSPORT_ASPECT_RATIO
+            // Headroom above face box (hair & top margin): ~20% of photo height
+            var photoTopPx = box.top.toFloat() - (photoHeightPx * 0.20f)
+            var photoBottomPx = photoTopPx + photoHeightPx
 
-            val photoLeftPx = (faceCenterX - actualWidthPx / 2f).coerceIn(0f, (srcW - actualWidthPx).coerceAtLeast(0f))
-            val photoRightPx = (photoLeftPx + actualWidthPx).coerceIn(photoLeftPx + 10f, srcW.toFloat())
+            // Ensure vertical bounds are within bitmap
+            if (photoTopPx < 0f) {
+                val shift = -photoTopPx
+                photoTopPx = 0f
+                photoBottomPx += shift
+            }
+            if (photoBottomPx > srcH) {
+                val overflow = photoBottomPx - srcH
+                photoTopPx = (photoTopPx - overflow).coerceAtLeast(0f)
+                photoBottomPx = srcH.toFloat()
+                // Recompute height and width to maintain strict passport ratio
+                photoHeightPx = photoBottomPx - photoTopPx
+                photoWidthPx = photoHeightPx * PASSPORT_ASPECT_RATIO
+            }
 
-            val normLeft = (photoLeftPx / srcW).coerceIn(0f, 1f)
-            val normTop = (photoTopPx / srcH).coerceIn(0f, 1f)
+            var photoLeftPx = faceCenterX - (photoWidthPx / 2f)
+            var photoRightPx = photoLeftPx + photoWidthPx
+
+            // Ensure horizontal bounds are within bitmap
+            if (photoLeftPx < 0f) {
+                val shift = -photoLeftPx
+                photoLeftPx = 0f
+                photoRightPx += shift
+            }
+            if (photoRightPx > srcW) {
+                val overflow = photoRightPx - srcW
+                photoLeftPx = (photoLeftPx - overflow).coerceAtLeast(0f)
+                photoRightPx = srcW.toFloat()
+                // Recompute height and width to maintain strict passport ratio
+                photoWidthPx = photoRightPx - photoLeftPx
+                photoHeightPx = photoWidthPx / PASSPORT_ASPECT_RATIO
+                photoBottomPx = (photoTopPx + photoHeightPx).coerceAtMost(srcH.toFloat())
+            }
+
+            val normLeft = (photoLeftPx / srcW).coerceIn(0f, 0.95f)
+            val normTop = (photoTopPx / srcH).coerceIn(0f, 0.95f)
             val normRight = (photoRightPx / srcW).coerceIn(normLeft + 0.05f, 1f)
             val normBottom = (photoBottomPx / srcH).coerceIn(normTop + 0.05f, 1f)
 

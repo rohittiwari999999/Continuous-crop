@@ -165,6 +165,12 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
 
     fun cropAndSave(context: Context) {
         val state = _uiState.value
+        // If an existing item or box is currently selected for editing, update it instead of creating duplicate
+        if (state.selectedSavedItemId != null || state.selectedDetectedBoxIndex in state.detectedPassportBoxes.indices) {
+            saveOrUpdateSelectedCrop(context)
+            return
+        }
+
         val bmp = state.sourceBitmap ?: return
 
         viewModelScope.launch {
@@ -209,14 +215,17 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 aspectRatioLabel = state.activeAspectRatio.label,
                 timestamp = System.currentTimeMillis(),
                 fileSizeBytes = saveResult.sizeBytes,
-                detectedName = detectedNum
+                detectedName = detectedNum,
+                cropRect = state.cropRect
             )
 
             _uiState.update { current ->
                 current.copy(
                     savedItems = listOf(newItem) + current.savedItems,
                     lastSavedId = id,
-                    inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0)
+                    selectedSavedItemId = id,
+                    inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0),
+                    statusMessage = "Photo saved to gallery & storage"
                 )
             }
         }
@@ -224,10 +233,9 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
 
     /**
      * AUTO PASSPORT:
-     * - Detects all passport photos on the image/sheet at once.
-     * - Highlights and selects ALL of them on canvas with detected roll numbers.
-     * - Automatically saves ALL detected photos to phone storage and puts them in top slider ribbon!
-     * - First photo is selected with interactive crop handles for any fine adjustment.
+     * - Uses real ML Kit face detection taking rotation and flip into account.
+     * - Accurately frames passport proportions (3.5x4.5 ratio, ~72% head size).
+     * - Saves real crops and sets the interactive crop handles on the real photo.
      */
     fun autoDetectPassport(context: Context) {
         val state = _uiState.value
@@ -241,51 +249,20 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 )
             }
 
-            // 1. Detect all faces via ML Kit
-            var faceItems = PassportDetectionHelper.detectAllPassportFaces(bmp)
-
-            // 2. If no faces detected, fallback to detecting photo items from OCR labels on sheet
-            if (faceItems.isEmpty()) {
-                val ocrPhotos = PhotoNumberOcrHelper.detectAllPhotosOnSheet(bmp)
-                if (ocrPhotos.isNotEmpty()) {
-                    faceItems = ocrPhotos.map { ocrItem ->
-                        PassportDetectionHelper.PassportFaceItem(
-                            cropRect = ocrItem.cropRect,
-                            faceBoundingBox = android.graphics.Rect()
-                        )
-                    }
-                }
-            }
-
-            // 3. Fallback grid if still empty (for test sheets / structured cards)
-            if (faceItems.isEmpty()) {
-                val gridBoxes = mutableListOf<PassportDetectionHelper.PassportFaceItem>()
-                val cols = 3
-                val rows = 3
-                for (r in 0 until rows) {
-                    for (c in 0 until cols) {
-                        val l = 0.08f + c * 0.30f
-                        val t = 0.12f + r * 0.28f
-                        val w = 0.24f
-                        val h = (w / PassportDetectionHelper.PASSPORT_ASPECT_RATIO).coerceAtMost(0.26f)
-                        gridBoxes.add(
-                            PassportDetectionHelper.PassportFaceItem(
-                                cropRect = CropRect(l, t, (l + w).coerceAtMost(0.98f), (t + h).coerceAtMost(0.98f)),
-                                faceBoundingBox = android.graphics.Rect()
-                            )
-                        )
-                    }
-                }
-                faceItems = gridBoxes
-            }
+            // Detect faces respecting orientation
+            val faceItems = PassportDetectionHelper.detectAllPassportFaces(
+                source = bmp,
+                rotationDegrees = state.imageRotation,
+                isFlipped = state.isFlippedHorizontal
+            )
 
             val total = faceItems.size
             val newSavedItems = mutableListOf<SavedCropItem>()
             val boxes = mutableListOf<DetectedPassportBox>()
-            var latestSavedId: String? = null
+            var firstSavedId: String? = null
 
             faceItems.forEachIndexed { index, item ->
-                val progress = 0.05f + (index.toFloat() / total) * 0.9f
+                val progress = 0.05f + (index.toFloat() / total.coerceAtLeast(1)) * 0.9f
                 _uiState.update { it.copy(autoPassportProgress = progress) }
 
                 val detectedNum = PhotoNumberOcrHelper.detectNumberAroundCrop(
@@ -293,7 +270,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     cropRect = item.cropRect,
                     rotationDegrees = state.imageRotation,
                     isFlipped = state.isFlippedHorizontal
-                ) ?: "ROLL-${101 + index}"
+                ) ?: if (total > 1) "Passport ${index + 1}" else "Passport"
 
                 val cropped = BitmapUtils.cropBitmap(
                     source = bmp,
@@ -316,7 +293,10 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 )
 
                 val itemId = UUID.randomUUID().toString()
-                latestSavedId = itemId
+                if (firstSavedId == null) {
+                    firstSavedId = itemId
+                }
+
                 val savedItem = SavedCropItem(
                     id = itemId,
                     uri = saveResult.uri,
@@ -327,7 +307,8 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     aspectRatioLabel = "Passport",
                     timestamp = System.currentTimeMillis() + index,
                     fileSizeBytes = saveResult.sizeBytes,
-                    detectedName = detectedNum
+                    detectedName = detectedNum,
+                    cropRect = item.cropRect
                 )
                 newSavedItems.add(savedItem)
 
@@ -341,20 +322,25 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 boxes.add(box)
             }
 
-            val firstBox = boxes.first()
+            val firstBox = boxes.firstOrNull()
             _uiState.update { current ->
                 current.copy(
                     detectedPassportBoxes = boxes,
                     selectedDetectedBoxIndex = 0,
-                    cropRect = firstBox.cropRect,
-                    detectedNumberForCurrentCrop = firstBox.detectedName,
+                    cropRect = firstBox?.cropRect ?: current.cropRect,
+                    detectedNumberForCurrentCrop = firstBox?.detectedName,
                     activeAspectRatio = AspectRatio.PASSPORT,
-                    savedItems = newSavedItems.reversed() + current.savedItems,
-                    lastSavedId = latestSavedId,
+                    savedItems = newSavedItems + current.savedItems,
+                    lastSavedId = firstSavedId,
+                    selectedSavedItemId = firstSavedId,
                     isProcessingAutoPassport = false,
                     autoPassportProgress = 1f,
                     detectedFaceBoxCount = boxes.size,
-                    statusMessage = "All ${boxes.size} photos detected & saved to slider! Tap any to adjust."
+                    statusMessage = if (boxes.size > 1) {
+                        "Detected ${boxes.size} photos! Tap any thumbnail to adjust & update."
+                    } else {
+                        "Passport photo detected! Adjust handles if needed, then tap Update."
+                    }
                 )
             }
         }
@@ -362,14 +348,18 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
 
     /**
      * Updates/re-saves the currently adjusted photo crop:
-     * - Re-crops from source image using the user-adjusted crop box
-     * - Saves the updated image file to phone storage
-     * - Updates the corresponding item in the top slider ribbon in-place!
-     * - Updates the corresponding box in detectedPassportBoxes
+     * - Re-crops from source image using the exact user-adjusted crop box
+     * - Updates the corresponding photo in the top slider ribbon in-place!
+     * - Overwrites the saved file in storage so the gallery stays clean
      */
     fun saveOrUpdateSelectedCrop(context: Context) {
         val state = _uiState.value
         val bmp = state.sourceBitmap ?: return
+
+        val targetItemId = state.selectedSavedItemId
+            ?: state.selectedDetectedBox?.savedItemId
+            ?: state.lastSavedId
+            ?: UUID.randomUUID().toString()
 
         viewModelScope.launch {
             _uiState.update { it.copy(inFlightCount = it.inFlightCount + 1) }
@@ -384,7 +374,11 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
 
             val thumb = BitmapUtils.createThumbnail(cropped)
             val currentBox = state.selectedDetectedBox
-            val rollName = state.detectedNumberForCurrentCrop ?: currentBox?.detectedName ?: "PASSPORT"
+            val existingItem = state.savedItems.firstOrNull { it.id == targetItemId }
+            val rollName = state.detectedNumberForCurrentCrop
+                ?: currentBox?.detectedName
+                ?: existingItem?.detectedName
+                ?: "Passport"
 
             val saveResult = MediaStoreHelper.saveCroppedBitmap(
                 context = context.applicationContext,
@@ -396,8 +390,6 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 customName = rollName
             )
 
-            val targetItemId = currentBox?.savedItemId ?: state.lastSavedId ?: UUID.randomUUID().toString()
-
             val updatedSavedItem = SavedCropItem(
                 id = targetItemId,
                 uri = saveResult.uri,
@@ -408,12 +400,13 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 aspectRatioLabel = state.activeAspectRatio.label,
                 timestamp = System.currentTimeMillis(),
                 fileSizeBytes = saveResult.sizeBytes,
-                detectedName = rollName
+                detectedName = rollName,
+                cropRect = state.cropRect
             )
 
-            // Update top slider ribbon: Replace existing item in-place
+            // Update top slider ribbon: Replace existing item in-place by exact ID
             val currentSaved = state.savedItems.toMutableList()
-            val existingIndex = currentSaved.indexOfFirst { it.id == targetItemId || it.detectedName == rollName }
+            val existingIndex = currentSaved.indexOfFirst { it.id == targetItemId }
             if (existingIndex != -1) {
                 currentSaved[existingIndex] = updatedSavedItem
             } else {
@@ -436,22 +429,53 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     savedItems = currentSaved,
                     detectedPassportBoxes = updatedBoxes,
                     lastSavedId = targetItemId,
+                    selectedSavedItemId = targetItemId,
                     inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0),
-                    statusMessage = "Updated photo $rollName in slider & storage"
+                    statusMessage = "Updated photo '$rollName' in slider & storage"
                 )
             }
         }
     }
 
+    /**
+     * Called when tapping any thumbnail in the ribbon:
+     * - Selects that item for editing
+     * - Moves the crop box on the canvas directly to this photo's crop rect
+     * - Sets active aspect ratio to match
+     */
     fun onRibbonItemClick(item: SavedCropItem) {
+        selectSavedItemForEditing(item)
+    }
+
+    fun selectSavedItemForEditing(item: SavedCropItem) {
         val state = _uiState.value
         val boxIndex = state.detectedPassportBoxes.indexOfFirst {
-            it.savedItemId == item.id || it.detectedName == item.detectedName
+            it.savedItemId == item.id
         }
-        if (boxIndex != -1) {
-            selectDetectedBox(boxIndex)
-        } else {
-            selectDetailItem(item)
+
+        val targetRect = item.cropRect
+            ?: (if (boxIndex != -1) state.detectedPassportBoxes[boxIndex].cropRect else null)
+            ?: state.cropRect
+
+        _uiState.update {
+            it.copy(
+                selectedSavedItemId = item.id,
+                selectedDetectedBoxIndex = boxIndex,
+                cropRect = targetRect,
+                detectedNumberForCurrentCrop = item.detectedName,
+                lastSavedId = item.id,
+                statusMessage = "Editing '${item.detectedName ?: "photo"}'. Adjust handles, then tap Update."
+            )
+        }
+    }
+
+    fun deselectActiveEdit() {
+        _uiState.update {
+            it.copy(
+                selectedSavedItemId = null,
+                selectedDetectedBoxIndex = -1,
+                statusMessage = "Edit deselected. Ready for new crop."
+            )
         }
     }
 
@@ -463,8 +487,11 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
             _uiState.update {
                 it.copy(
                     selectedDetectedBoxIndex = index,
+                    selectedSavedItemId = box.savedItemId,
                     cropRect = box.cropRect,
-                    detectedNumberForCurrentCrop = box.detectedName
+                    detectedNumberForCurrentCrop = box.detectedName,
+                    lastSavedId = box.savedItemId ?: it.lastSavedId,
+                    statusMessage = "Selected ${box.detectedName ?: "Photo #${index + 1}"}. Adjust crop, then tap Update."
                 )
             }
         }
