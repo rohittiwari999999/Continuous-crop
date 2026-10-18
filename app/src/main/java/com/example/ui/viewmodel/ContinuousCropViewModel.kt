@@ -748,13 +748,23 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
 
     fun updateSelectedRollNumber(newRoll: String) {
         val state = _uiState.value
+        val trimmedRoll = newRoll.trim()
+        val targetBox = state.detectedPassportBoxes.getOrNull(state.selectedDetectedBoxIndex)
+        val targetItemId = state.selectedSavedItemId ?: targetBox?.savedItemId
+
         val updatedBoxes = state.detectedPassportBoxes.mapIndexed { idx, box ->
-            if (idx == state.selectedDetectedBoxIndex) box.copy(detectedName = newRoll) else box
+            if (idx == state.selectedDetectedBoxIndex) box.copy(detectedName = trimmedRoll) else box
         }
+        val updatedSavedItems = state.savedItems.map { item ->
+            if (item.id == targetItemId) item.copy(detectedName = trimmedRoll) else item
+        }
+        saveSnapshotForUndo()
         _uiState.update {
             it.copy(
-                detectedNumberForCurrentCrop = newRoll,
-                detectedPassportBoxes = updatedBoxes
+                detectedNumberForCurrentCrop = trimmedRoll,
+                detectedPassportBoxes = updatedBoxes,
+                savedItems = updatedSavedItems,
+                statusMessage = "Photo number set to '$trimmedRoll'"
             )
         }
     }

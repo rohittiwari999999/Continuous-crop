@@ -30,6 +30,13 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -40,11 +47,24 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AspectRatio
@@ -77,8 +97,33 @@ fun CropControlBar(
     onPrevBoxClick: () -> Unit = {},
     onScanNumberClick: () -> Unit = {},
     onExtractSheetClick: () -> Unit = {},
+    onUpdateNumber: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var isEditingNumber by remember { mutableStateOf(false) }
+    var textFieldValue by remember(currentScannedNumber) {
+        val initialText = currentScannedNumber ?: ""
+        mutableStateOf(
+            TextFieldValue(
+                text = initialText,
+                selection = TextRange(initialText.length)
+            )
+        )
+    }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isEditingNumber) {
+        if (isEditingNumber) {
+            val text = currentScannedNumber ?: ""
+            textFieldValue = TextFieldValue(
+                text = text,
+                selection = TextRange(text.length)
+            )
+            try {
+                focusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -151,22 +196,112 @@ fun CropControlBar(
                     Spacer(modifier = Modifier.width(4.dp))
                 }
 
-                // Detected handwriting number / file name badge
-                if (!currentScannedNumber.isNullOrBlank()) {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(NeonCyan.copy(alpha = 0.16f))
-                            .border(1.dp, NeonCyan.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "No: $currentScannedNumber",
-                            color = NeonCyan,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
+                // Detected handwriting number / file name badge (clickable to edit)
+                if (hasImage && (!currentScannedNumber.isNullOrBlank() || detectedBoxCount > 0)) {
+                    if (isEditingNumber) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(WorkspaceSurfaceVariant)
+                                .border(1.5.dp, NeonCyan, RoundedCornerShape(8.dp))
+                                .padding(start = 8.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)
+                                .testTag("photo_number_editing_row"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "No: ",
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            BasicTextField(
+                                value = textFieldValue,
+                                onValueChange = { textFieldValue = it },
+                                textStyle = TextStyle(
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                ),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Text,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        val newNum = textFieldValue.text.trim()
+                                        if (newNum.isNotEmpty()) {
+                                            onUpdateNumber(newNum)
+                                        }
+                                        isEditingNumber = false
+                                    }
+                                ),
+                                modifier = Modifier
+                                    .widthIn(min = 45.dp, max = 95.dp)
+                                    .focusRequester(focusRequester)
+                                    .testTag("photo_number_input"),
+                                singleLine = true,
+                                cursorBrush = SolidColor(NeonCyan)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Button(
+                                onClick = {
+                                    val newNum = textFieldValue.text.trim()
+                                    if (newNum.isNotEmpty()) {
+                                        onUpdateNumber(newNum)
+                                    }
+                                    isEditingNumber = false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                                shape = RoundedCornerShape(6.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .testTag("save_number_ok_button")
+                            ) {
+                                Text(
+                                    text = "OK",
+                                    color = WorkspaceSurface,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            IconButton(
+                                onClick = { isEditingNumber = false },
+                                modifier = Modifier.size(26.dp).testTag("cancel_number_edit_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cancel",
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(NeonCyan.copy(alpha = 0.16f))
+                                .border(1.dp, NeonCyan.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                                .clickable { isEditingNumber = true }
+                                .padding(horizontal = 8.dp, vertical = 5.dp)
+                                .testTag("photo_number_tag"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "No: ${currentScannedNumber ?: "1"}",
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit Number",
+                                tint = NeonCyan,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.width(4.dp))
                 }

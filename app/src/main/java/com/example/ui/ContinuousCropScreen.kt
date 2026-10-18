@@ -166,7 +166,8 @@ fun ContinuousCropScreen(
                     onNextBoxClick = { viewModel.nextDetectedBox() },
                     onPrevBoxClick = { viewModel.prevDetectedBox() },
                     onScanNumberClick = { viewModel.scanNumberForCurrentCrop() },
-                    onExtractSheetClick = { viewModel.extractAllSheet(context) }
+                    onExtractSheetClick = { viewModel.extractAllSheet(context) },
+                    onUpdateNumber = { viewModel.updateSelectedRollNumber(it) }
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
