@@ -189,6 +189,7 @@ fun ContinuousCropScreen(
                     pixelDimensions = uiState.currentCropPixelDimensions,
                     detectedPassportBoxes = uiState.detectedPassportBoxes,
                     selectedBoxIndex = uiState.selectedDetectedBoxIndex,
+                    currentScannedNumber = uiState.detectedNumberForCurrentCrop,
                     onSelectDetectedBox = { viewModel.selectDetectedBox(it) },
                     onCropRectChange = { viewModel.updateCropRect(it) },
                     onCropGestureStart = { viewModel.onCropGestureStart() }

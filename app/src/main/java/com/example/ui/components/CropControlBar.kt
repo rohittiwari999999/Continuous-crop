@@ -151,6 +151,26 @@ fun CropControlBar(
                     Spacer(modifier = Modifier.width(4.dp))
                 }
 
+                // Detected handwriting number / file name badge
+                if (!currentScannedNumber.isNullOrBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(NeonCyan.copy(alpha = 0.16f))
+                            .border(1.dp, NeonCyan.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "No: $currentScannedNumber",
+                            color = NeonCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+
                 // Aspect Ratio Selector Chips
                 AspectRatio.values().forEach { ratio ->
                     val isSelected = activeAspectRatio == ratio

@@ -131,10 +131,10 @@ object PassportDetectionHelper {
 
         if (mlFaces.isEmpty()) {
             val imageAspect = srcW.toFloat() / srcH.toFloat()
-            val normW = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.45f else 0.60f
-            val normH = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.75f else (normW * imageAspect / PASSPORT_ASPECT_RATIO).coerceAtMost(0.85f)
+            val normW = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.65f else 0.60f
+            val normH = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.85f else (normW * imageAspect / PASSPORT_ASPECT_RATIO).coerceAtMost(0.85f)
             val left = ((1f - normW) / 2f).coerceIn(0f, 0.95f)
-            val top = 0.08f.coerceIn(0f, (1f - normH).coerceAtLeast(0f))
+            val top = 0.06f.coerceIn(0f, (1f - normH).coerceAtLeast(0f))
             val fallbackRect = CropRect(left, top, (left + normW).coerceAtMost(1f), (top + normH).coerceAtMost(1f))
             return@withContext listOf(
                 PassportFaceItem(
@@ -168,13 +168,13 @@ object PassportDetectionHelper {
 
             if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
                 // PHOTO + SIGNATURE BELOW:
-                // Focus tightly on photo sticker and signature:
-                // 1. Top: Just above head/hair (stops before roll numbers / text written above).
-                // 2. Bottom: Down below signature line (captures full handwritten signature).
-                // 3. Width: Focused tightly on person's photo width (avoids side clutter/adjacent columns).
-                photoTopPx = (box.top.toFloat() - (faceH * 0.16f)).coerceAtLeast(0f)
-                photoBottomPx = (box.bottom.toFloat() + (faceH * 1.70f)).coerceAtMost(srcH.toFloat())
-                val targetW = (faceW * 1.30f).coerceIn(faceH * 0.95f, faceH * 1.15f)
+                // Generous coverage satisfying user's exact requirements:
+                // 1. Head pura cover ho: generous headroom for hair and crown
+                // 2. Solder pura cover ho + thoda sa daye-baye margin: wide enough to cover both shoulders, torso, and wide signature
+                // 3. Whole signature cover ho: extends comfortably down past chest and signature box
+                photoTopPx = (box.top.toFloat() - (faceH * 0.40f)).coerceAtLeast(0f)
+                photoBottomPx = (box.bottom.toFloat() + (faceH * 2.25f)).coerceAtMost(srcH.toFloat())
+                val targetW = maxOf(faceW * 2.50f, faceH * 1.85f)
                 photoWidthPx = targetW.coerceAtMost(srcW.toFloat())
             } else {
                 // STANDARD PASSPORT (PHOTO ONLY):

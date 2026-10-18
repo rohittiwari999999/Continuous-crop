@@ -367,13 +367,13 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 resizeOption = state.activeResizeOption
             )
 
-            // Use existing scanned number or detect OCR
+            // Use existing scanned number or detect OCR directly above photo
             val detectedNum = state.detectedNumberForCurrentCrop ?: PhotoNumberOcrHelper.detectNumberAroundCrop(
                 source = bmp,
                 cropRect = state.cropRect,
                 rotationDegrees = state.imageRotation,
                 isFlipped = state.isFlippedHorizontal
-            )
+            ) ?: "1"
 
             val thumbnail = BitmapUtils.createThumbnail(cropped)
 
@@ -382,7 +382,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 bitmap = cropped,
                 format = state.appSettings.outputFormat.compressFormat,
                 quality = state.appSettings.jpegQuality,
-                prefix = state.appSettings.filenamePrefix,
+                prefix = "",
                 albumName = state.appSettings.storageAlbumName,
                 customName = detectedNum
             )
@@ -408,7 +408,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     lastSavedId = id,
                     selectedSavedItemId = id,
                     inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0),
-                    statusMessage = "Photo saved to gallery & storage"
+                    statusMessage = "Photo '$detectedNum.jpg' saved to phone storage & gallery!"
                 )
             }
         }
@@ -449,16 +449,26 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
             val boxes = mutableListOf<DetectedPassportBox>()
             var firstSavedId: String? = null
 
+            // Batch-detect numbers written above photos using full-sheet OCR + focused regional scan
+            val detectedNumbers = PhotoNumberOcrHelper.detectNumbersForCrops(
+                source = bmp,
+                cropRects = faceItems.map { it.cropRect },
+                rotationDegrees = state.imageRotation,
+                isFlipped = state.isFlippedHorizontal
+            )
+
             faceItems.forEachIndexed { index, item ->
                 val progress = 0.05f + (index.toFloat() / total.coerceAtLeast(1)) * 0.9f
                 _uiState.update { it.copy(autoPassportProgress = progress) }
 
-                val detectedNum = PhotoNumberOcrHelper.detectNumberAroundCrop(
-                    source = bmp,
-                    cropRect = item.cropRect,
-                    rotationDegrees = state.imageRotation,
-                    isFlipped = state.isFlippedHorizontal
-                ) ?: if (total > 1) "Passport ${index + 1}" else "Passport"
+                val detectedNum = detectedNumbers.getOrNull(index)
+                    ?: PhotoNumberOcrHelper.detectNumberAroundCrop(
+                        source = bmp,
+                        cropRect = item.cropRect,
+                        rotationDegrees = state.imageRotation,
+                        isFlipped = state.isFlippedHorizontal
+                    )
+                    ?: if (total > 1) "${index + 1}" else "1"
 
                 val cropped = BitmapUtils.cropBitmap(
                     source = bmp,
@@ -562,14 +572,20 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
             val rollName = state.detectedNumberForCurrentCrop
                 ?: currentBox?.detectedName
                 ?: existingItem?.detectedName
-                ?: "Passport"
+                ?: PhotoNumberOcrHelper.detectNumberAroundCrop(
+                    source = bmp,
+                    cropRect = state.cropRect,
+                    rotationDegrees = state.imageRotation,
+                    isFlipped = state.isFlippedHorizontal
+                )
+                ?: "1"
 
             val saveResult = MediaStoreHelper.saveCroppedBitmap(
                 context = context.applicationContext,
                 bitmap = cropped,
                 format = state.appSettings.outputFormat.compressFormat,
                 quality = state.appSettings.jpegQuality,
-                prefix = "PASSPORT_",
+                prefix = "",
                 albumName = state.appSettings.storageAlbumName,
                 customName = rollName
             )
@@ -616,9 +632,9 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     selectedSavedItemId = targetItemId,
                     inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0),
                     statusMessage = if (existingItem?.uri == null) {
-                        "Photo '$rollName' saved to phone storage & gallery!"
+                        "Photo '$rollName.jpg' saved to phone storage & gallery!"
                     } else {
-                        "Updated photo '$rollName' in slider & storage"
+                        "Updated photo '$rollName.jpg' in storage & gallery"
                     }
                 )
             }

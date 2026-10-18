@@ -65,6 +65,7 @@ fun CropOverlayCanvas(
     pixelDimensions: Pair<Int, Int>,
     detectedPassportBoxes: List<DetectedPassportBox> = emptyList(),
     selectedBoxIndex: Int = -1,
+    currentScannedNumber: String? = null,
     onSelectDetectedBox: (Int) -> Unit = {},
     onCropRectChange: (CropRect) -> Unit,
     onCropGestureStart: () -> Unit = {},
@@ -314,6 +315,33 @@ fun CropOverlayCanvas(
 
                 // 7. Draw 8 Handles & Corner brackets
                 drawHandles(cropPxLeft, cropPxTop, cropPxRight, cropPxBottom)
+
+                // 8. Draw detected number pill badge if single crop
+                if (detectedPassportBoxes.isEmpty() && !currentScannedNumber.isNullOrBlank()) {
+                    drawContext.canvas.nativeCanvas.apply {
+                        val textPaint = AndroidPaint().apply {
+                            color = android.graphics.Color.BLACK
+                            textSize = 26f
+                            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                            isAntiAlias = true
+                        }
+                        val textWidth = textPaint.measureText(currentScannedNumber)
+                        val pillH = 34f
+                        val pillW = textWidth + 22f
+                        val pillT = if (cropPxTop - pillH >= imgRect.top) cropPxTop - pillH - 3f else cropPxTop + 3f
+                        val pillB = pillT + pillH
+
+                        val bgPaint = AndroidPaint().apply {
+                            color = android.graphics.Color.rgb(6, 182, 212)
+                            isAntiAlias = true
+                        }
+                        drawRoundRect(
+                            cropPxLeft, pillT, cropPxLeft + pillW, pillB,
+                            8f, 8f, bgPaint
+                        )
+                        drawText(currentScannedNumber, cropPxLeft + 11f, pillB - 9f, textPaint)
+                    }
+                }
             }
         }
     }

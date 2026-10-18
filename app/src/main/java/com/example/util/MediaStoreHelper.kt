@@ -46,9 +46,9 @@ object MediaStoreHelper {
             else -> "image/jpeg"
         }
 
-        val sanitizedCustom = customName?.replace(Regex("[^a-zA-Z0-9_-]"), "_")?.take(30)
+        val sanitizedCustom = customName?.trim()?.replace(Regex("[^a-zA-Z0-9_-]"), "_")?.take(30)
         val filename = if (!sanitizedCustom.isNullOrBlank()) {
-            "${sanitizedCustom}_${timestamp}.$extension"
+            "$sanitizedCustom.$extension"
         } else {
             "${prefix}${timestamp}.$extension"
         }
