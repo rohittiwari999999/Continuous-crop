@@ -28,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -253,72 +252,6 @@ fun SavedRibbonBar(
                             isLatest = item.id == lastSavedId,
                             onClick = { onItemClick(item) }
                         )
-                    }
-                }
-            }
-
-            // Editing detail bar placed BELOW photo slider, directly above canvas
-            if (!selectedSavedItemId.isNullOrBlank()) {
-                val activeItem = savedItems.firstOrNull { it.id == selectedSavedItemId }
-                val isSavedToStorage = activeItem != null && (activeItem.uri != null || activeItem.filePath != null)
-                Surface(
-                    color = WorkspaceSurfaceVariant,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, if (isSavedToStorage) NeonCyan.copy(alpha = 0.5f) else AccentTeal.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f, fill = false)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isSavedToStorage) NeonCyan else AccentTeal)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Editing: ${activeItem?.detectedName ?: "Passport"}",
-                                color = if (isSavedToStorage) NeonCyan else AccentTeal,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isSavedToStorage) {
-                                    "(${activeItem?.cropWidth}×${activeItem?.cropHeight}) • Adjust & tap Update"
-                                } else {
-                                    "(${activeItem?.cropWidth}×${activeItem?.cropHeight}) • Adjust & tap Save"
-                                },
-                                color = TextSecondary,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        IconButton(
-                            onClick = onDeselectEdit,
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Exit Editing",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
                     }
                 }
             }

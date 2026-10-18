@@ -509,11 +509,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     selectedDetectedBoxIndex = 0,
                     cropRect = firstBox?.cropRect ?: current.cropRect,
                     detectedNumberForCurrentCrop = firstBox?.detectedName,
-                    activeAspectRatio = if (mode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
-                        AspectRatio.FREE
-                    } else {
-                        AspectRatio.PASSPORT
-                    },
+                    activeAspectRatio = AspectRatio.FREE,
                     savedItems = newSavedItems + current.savedItems,
                     lastSavedId = firstSavedId,
                     selectedSavedItemId = firstSavedId,
