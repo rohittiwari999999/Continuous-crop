@@ -18,8 +18,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -27,6 +29,7 @@ import com.example.ui.components.AppNavigationDrawer
 import com.example.ui.components.CropControlBar
 import com.example.ui.components.CropDetailDialog
 import com.example.ui.components.CropOverlayCanvas
+import com.example.ui.components.PassportModeSelectionDialog
 import com.example.ui.components.SavedRibbonBar
 import com.example.ui.settings.SettingsScreen
 import com.example.ui.theme.WorkspaceBackground
@@ -44,6 +47,7 @@ fun ContinuousCropScreen(
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
+    var showPassportModeDialog by remember { mutableStateOf(false) }
 
     // Visual media picker (zero permission Android photo picker)
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -117,7 +121,8 @@ fun ContinuousCropScreen(
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onItemClick = { item -> viewModel.onRibbonItemClick(item) },
                     onClearAllClick = { viewModel.clearAllSavedItems() },
-                    onSettingsClick = { viewModel.toggleSettings(true) }
+                    onSettingsClick = { viewModel.toggleSettings(true) },
+                    onDeselectEdit = { viewModel.deselectActiveEdit() }
                 )
             },
             bottomBar = {
@@ -136,7 +141,7 @@ fun ContinuousCropScreen(
                     },
                     onAspectRatioSelect = { viewModel.setAspectRatio(it) },
                     onAutoPassportClick = {
-                        viewModel.autoDetectPassport(context)
+                        showPassportModeDialog = true
                     },
                     onCropAndSaveClick = {
                         if (isEditing) {
@@ -190,6 +195,16 @@ fun ContinuousCropScreen(
                 item.uri?.let { uri ->
                     ShareHelper.shareImage(context, uri, "Share Passport Photo (${item.detectedName ?: "Crop"})")
                 } ?: Toast.makeText(context, "Image file not accessible", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    // Passport Mode Selection Dialog (Photo Only vs With Signature)
+    if (showPassportModeDialog) {
+        PassportModeSelectionDialog(
+            onDismiss = { showPassportModeDialog = false },
+            onSelectMode = { mode ->
+                viewModel.autoDetectPassport(context, mode)
             }
         )
     }

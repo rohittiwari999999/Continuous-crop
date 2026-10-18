@@ -98,7 +98,8 @@ object PassportDetectionHelper {
     suspend fun detectAllPassportFaces(
         source: Bitmap,
         rotationDegrees: Int = 0,
-        isFlipped: Boolean = false
+        isFlipped: Boolean = false,
+        cropMode: com.example.data.model.PassportCropMode = com.example.data.model.PassportCropMode.PHOTO_ONLY
     ): List<PassportFaceItem> = withContext(Dispatchers.Default) {
         val oriented = if (rotationDegrees != 0 || isFlipped) {
             val matrix = Matrix()
@@ -129,17 +130,15 @@ object PassportDetectionHelper {
         }
 
         if (mlFaces.isEmpty()) {
-            // If ML Kit doesn't detect any face, create ONE real centered passport box (3.5x4.5 ratio)
-            // NEVER generate fake 9-grid boxes
             val imageAspect = srcW.toFloat() / srcH.toFloat()
-            var normW = 0.65f.coerceAtMost(0.92f)
+            var normW = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.55f else 0.65f
             var normH = (normW * imageAspect) / PASSPORT_ASPECT_RATIO
             if (normH > 0.88f) {
                 normH = 0.88f
                 normW = (normH * PASSPORT_ASPECT_RATIO) / imageAspect
             }
             val left = ((1f - normW) / 2f).coerceIn(0f, 0.95f)
-            val top = 0.06f.coerceIn(0f, (1f - normH).coerceAtLeast(0f))
+            val top = 0.05f.coerceIn(0f, (1f - normH).coerceAtLeast(0f))
             val fallbackRect = CropRect(left, top, (left + normW).coerceAtMost(1f), (top + normH).coerceAtMost(1f))
             return@withContext listOf(
                 PassportFaceItem(
@@ -166,15 +165,24 @@ object PassportDetectionHelper {
             val faceH = box.height().toFloat().coerceAtLeast(10f)
             val faceCenterX = box.centerX().toFloat()
 
-            // Standard passport photo framing:
-            // Full head (crown of hair to chin) should be ~70-75% of the photo height.
-            // ML Kit bounding box covers forehead to chin.
-            // Total photo height should be ~1.75x of face box height to capture hair, crown, and collar/shoulders.
-            var photoHeightPx = faceH * 1.75f
-            var photoWidthPx = photoHeightPx * PASSPORT_ASPECT_RATIO
+            var photoHeightPx: Float
+            var photoTopPx: Float
 
-            // Headroom above face box (hair & top margin): ~20% of photo height
-            var photoTopPx = box.top.toFloat() - (photoHeightPx * 0.20f)
+            if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
+                // PHOTO + SIGNATURE BELOW:
+                // Captures student photo AND signature below the photo in a combined passport frame.
+                // Leaves scene above head, and extends down to encompass the signature.
+                photoHeightPx = faceH * 3.65f
+                photoTopPx = box.top.toFloat() - (faceH * 0.70f)
+            } else {
+                // STANDARD PASSPORT (PHOTO ONLY):
+                // Generous crop covering entire photo sticker with full hair, chest & shoulders.
+                // Gives comfortable margins around person without being tight on face.
+                photoHeightPx = faceH * 2.50f
+                photoTopPx = box.top.toFloat() - (faceH * 0.65f)
+            }
+
+            var photoWidthPx = photoHeightPx * PASSPORT_ASPECT_RATIO
             var photoBottomPx = photoTopPx + photoHeightPx
 
             // Ensure vertical bounds are within bitmap
@@ -187,7 +195,6 @@ object PassportDetectionHelper {
                 val overflow = photoBottomPx - srcH
                 photoTopPx = (photoTopPx - overflow).coerceAtLeast(0f)
                 photoBottomPx = srcH.toFloat()
-                // Recompute height and width to maintain strict passport ratio
                 photoHeightPx = photoBottomPx - photoTopPx
                 photoWidthPx = photoHeightPx * PASSPORT_ASPECT_RATIO
             }
@@ -205,7 +212,6 @@ object PassportDetectionHelper {
                 val overflow = photoRightPx - srcW
                 photoLeftPx = (photoLeftPx - overflow).coerceAtLeast(0f)
                 photoRightPx = srcW.toFloat()
-                // Recompute height and width to maintain strict passport ratio
                 photoWidthPx = photoRightPx - photoLeftPx
                 photoHeightPx = photoWidthPx / PASSPORT_ASPECT_RATIO
                 photoBottomPx = (photoTopPx + photoHeightPx).coerceAtMost(srcH.toFloat())

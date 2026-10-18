@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -75,6 +76,7 @@ fun SavedRibbonBar(
     onItemClick: (SavedCropItem) -> Unit,
     onClearAllClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onDeselectEdit: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -167,25 +169,7 @@ fun SavedRibbonBar(
                         )
                     }
 
-                    // If editing a photo, show Editing Pill
-                    if (!selectedSavedItemId.isNullOrBlank()) {
-                        val activeItem = savedItems.firstOrNull { it.id == selectedSavedItemId }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(NeonCyan.copy(alpha = 0.18f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Editing: ${activeItem?.detectedName ?: "Photo"}",
-                                color = NeonCyan,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
+
 
                     if (inFlightCount > 0 || isProcessingAutoPassport) {
                         Spacer(modifier = Modifier.width(10.dp))
@@ -261,6 +245,67 @@ fun SavedRibbonBar(
                             isLatest = item.id == lastSavedId,
                             onClick = { onItemClick(item) }
                         )
+                    }
+                }
+            }
+
+            // Editing detail bar placed BELOW photo slider, directly above canvas
+            if (!selectedSavedItemId.isNullOrBlank()) {
+                val activeItem = savedItems.firstOrNull { it.id == selectedSavedItemId }
+                Surface(
+                    color = WorkspaceSurfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(NeonCyan)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Editing: ${activeItem?.detectedName ?: "Passport"}",
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "(${activeItem?.cropWidth}×${activeItem?.cropHeight}) • Adjust crop & tap Update",
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onDeselectEdit,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Exit Editing",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }

@@ -237,7 +237,10 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
      * - Accurately frames passport proportions (3.5x4.5 ratio, ~72% head size).
      * - Saves real crops and sets the interactive crop handles on the real photo.
      */
-    fun autoDetectPassport(context: Context) {
+    fun autoDetectPassport(
+        context: Context,
+        mode: com.example.data.model.PassportCropMode = com.example.data.model.PassportCropMode.PHOTO_ONLY
+    ) {
         val state = _uiState.value
         val bmp = state.sourceBitmap ?: return
 
@@ -249,11 +252,12 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                 )
             }
 
-            // Detect faces respecting orientation
+            // Detect faces respecting orientation and chosen mode (Photo Only vs With Signature)
             val faceItems = PassportDetectionHelper.detectAllPassportFaces(
                 source = bmp,
                 rotationDegrees = state.imageRotation,
-                isFlipped = state.isFlippedHorizontal
+                isFlipped = state.isFlippedHorizontal,
+                cropMode = mode
             )
 
             val total = faceItems.size
@@ -287,7 +291,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     bitmap = cropped,
                     format = state.appSettings.outputFormat.compressFormat,
                     quality = state.appSettings.jpegQuality,
-                    prefix = "PASSPORT_",
+                    prefix = if (mode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) "PASSPORT_SIGN_" else "PASSPORT_",
                     albumName = state.appSettings.storageAlbumName,
                     customName = detectedNum
                 )
@@ -304,7 +308,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     thumbnailBitmap = thumb,
                     cropWidth = cropped.width,
                     cropHeight = cropped.height,
-                    aspectRatioLabel = "Passport",
+                    aspectRatioLabel = if (mode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) "Passport+Sign" else "Passport",
                     timestamp = System.currentTimeMillis() + index,
                     fileSizeBytes = saveResult.sizeBytes,
                     detectedName = detectedNum,
@@ -337,7 +341,11 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     autoPassportProgress = 1f,
                     detectedFaceBoxCount = boxes.size,
                     statusMessage = if (boxes.size > 1) {
-                        "Detected ${boxes.size} photos! Tap any thumbnail to adjust & update."
+                        if (mode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
+                            "Detected ${boxes.size} photos with signatures! Tap any to adjust & update."
+                        } else {
+                            "Detected ${boxes.size} passport photos! Tap any to adjust & update."
+                        }
                     } else {
                         "Passport photo detected! Adjust handles if needed, then tap Update."
                     }
