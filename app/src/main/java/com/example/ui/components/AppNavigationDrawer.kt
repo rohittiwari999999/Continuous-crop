@@ -62,39 +62,20 @@ fun AppNavigationDrawer(
                 .fillMaxHeight()
                 .padding(vertical = 24.dp, horizontal = 16.dp)
         ) {
-            // Header
+            // Header with Animated Logo
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(bottom = 20.dp, start = 8.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(NeonCyan),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Face,
-                        contentDescription = null,
-                        tint = WorkspaceSurface,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "SnapCrop",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    Text(
-                        text = "Auto Passport Workstation",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = NeonCyan
-                    )
-                }
+                AnimatedSnapCropLogo(
+                    iconSize = 36.dp,
+                    textSize = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Black
+                    ),
+                    showSubtitle = true,
+                    subtitleText = "Auto Passport Workstation"
+                )
             }
 
             HorizontalDivider(color = WorkspaceBorder, modifier = Modifier.padding(bottom = 16.dp))

@@ -133,13 +133,14 @@ fun SavedRibbonBar(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
-                    Text(
-                        text = "SnapCrop",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = NeonCyan
+                    AnimatedSnapCropLogo(
+                        iconSize = 22.dp,
+                        textSize = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp
+                        )
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
