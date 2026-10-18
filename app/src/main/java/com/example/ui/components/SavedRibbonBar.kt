@@ -26,13 +26,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +71,10 @@ fun SavedRibbonBar(
     lastSavedId: String?,
     selectedSavedItemId: String? = null,
     autoScroll: Boolean = true,
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
+    onUndoClick: () -> Unit = {},
+    onRedoClick: () -> Unit = {},
     onBackClick: () -> Unit = {},
     onMenuClick: () -> Unit,
     onItemClick: (SavedCropItem) -> Unit,
@@ -145,30 +149,6 @@ fun SavedRibbonBar(
                         )
                     )
 
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    BadgedBox(
-                        badge = {
-                            Badge(
-                                containerColor = if (savedItems.isNotEmpty()) NeonCyan else WorkspaceBorder,
-                                contentColor = WorkspaceSurface
-                            ) {
-                                Text(
-                                    text = "${savedItems.size}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PhotoLibrary,
-                            contentDescription = "Saved Count",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
 
 
                     if (inFlightCount > 0 || isProcessingAutoPassport) {
@@ -182,6 +162,34 @@ fun SavedRibbonBar(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Undo Button
+                    IconButton(
+                        onClick = onUndoClick,
+                        enabled = canUndo,
+                        modifier = Modifier.size(40.dp).testTag("top_undo_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Undo,
+                            contentDescription = "Undo",
+                            tint = if (canUndo) TextPrimary else TextSecondary.copy(alpha = 0.35f),
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+
+                    // Redo Button
+                    IconButton(
+                        onClick = onRedoClick,
+                        enabled = canRedo,
+                        modifier = Modifier.size(40.dp).testTag("top_redo_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Redo,
+                            contentDescription = "Redo",
+                            tint = if (canRedo) TextPrimary else TextSecondary.copy(alpha = 0.35f),
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+
                     if (savedItems.isNotEmpty()) {
                         IconButton(
                             onClick = onClearAllClick,

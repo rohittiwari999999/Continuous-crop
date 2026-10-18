@@ -40,6 +40,8 @@ data class ContinuousCropUiState(
     val selectedSavedItemId: String? = null,
     val detectedNumberForCurrentCrop: String? = null,
     val detectedFaceBoxCount: Int = 0,
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
     val appSettings: AppSettings = AppSettings()
 ) {
     val hasImage: Boolean get() = sourceBitmap != null

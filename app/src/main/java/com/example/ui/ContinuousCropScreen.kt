@@ -54,6 +54,7 @@ fun ContinuousCropScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
+            showPassportModeDialog = false
             viewModel.loadFromUri(context, uri)
         }
     }
@@ -69,12 +70,14 @@ fun ContinuousCropScreen(
 
     // Back handling
     val isEditing = uiState.isEditingExistingCrop
-    BackHandler(enabled = drawerState.isOpen || uiState.isSettingsOpen || uiState.selectedDetailItem != null || isEditing) {
+    BackHandler(enabled = drawerState.isOpen || uiState.isSettingsOpen || uiState.selectedDetailItem != null || uiState.canUndo || isEditing || uiState.detectedPassportBoxes.isNotEmpty()) {
         when {
             uiState.selectedDetailItem != null -> viewModel.selectDetailItem(null)
             uiState.isSettingsOpen -> viewModel.toggleSettings(false)
-            isEditing -> viewModel.deselectActiveEdit()
             drawerState.isOpen -> scope.launch { drawerState.close() }
+            uiState.canUndo -> viewModel.undo()
+            uiState.detectedPassportBoxes.isNotEmpty() -> viewModel.clearDetectedBoxes()
+            isEditing -> viewModel.deselectActiveEdit()
         }
     }
 
@@ -109,12 +112,18 @@ fun ContinuousCropScreen(
                     lastSavedId = uiState.lastSavedId,
                     selectedSavedItemId = uiState.selectedSavedItemId,
                     autoScroll = uiState.appSettings.autoScrollRibbon,
+                    canUndo = uiState.canUndo,
+                    canRedo = uiState.canRedo,
+                    onUndoClick = { viewModel.undo() },
+                    onRedoClick = { viewModel.redo() },
                     onBackClick = {
                         when {
                             uiState.selectedDetailItem != null -> viewModel.selectDetailItem(null)
                             uiState.isSettingsOpen -> viewModel.toggleSettings(false)
-                            isEditing -> viewModel.deselectActiveEdit()
                             drawerState.isOpen -> scope.launch { drawerState.close() }
+                            uiState.canUndo -> viewModel.undo()
+                            uiState.detectedPassportBoxes.isNotEmpty() -> viewModel.clearDetectedBoxes()
+                            isEditing -> viewModel.deselectActiveEdit()
                             else -> viewModel.resetCrop()
                         }
                     },
@@ -181,7 +190,8 @@ fun ContinuousCropScreen(
                     detectedPassportBoxes = uiState.detectedPassportBoxes,
                     selectedBoxIndex = uiState.selectedDetectedBoxIndex,
                     onSelectDetectedBox = { viewModel.selectDetectedBox(it) },
-                    onCropRectChange = { viewModel.updateCropRect(it) }
+                    onCropRectChange = { viewModel.updateCropRect(it) },
+                    onCropGestureStart = { viewModel.onCropGestureStart() }
                 )
             }
         }

@@ -67,6 +67,7 @@ fun CropOverlayCanvas(
     selectedBoxIndex: Int = -1,
     onSelectDetectedBox: (Int) -> Unit = {},
     onCropRectChange: (CropRect) -> Unit,
+    onCropGestureStart: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (bitmap == null) return
@@ -74,6 +75,7 @@ fun CropOverlayCanvas(
     val currentCropRect by rememberUpdatedState(cropRect)
     val currentAspectRatio by rememberUpdatedState(aspectRatio)
     val currentOnCropRectChange by rememberUpdatedState(onCropRectChange)
+    val currentOnCropGestureStart by rememberUpdatedState(onCropGestureStart)
     val currentOnSelectDetectedBox by rememberUpdatedState(onSelectDetectedBox)
     val currentDetectedPassportBoxes by rememberUpdatedState(detectedPassportBoxes)
 
@@ -121,6 +123,7 @@ fun CropOverlayCanvas(
                             var prevCentroid = down.position
                             var prevSpan = 0f
                             var hasMoved = false
+                            var gestureSnapshotTriggered = false
                             val touchSlop = viewConfiguration.touchSlop
                             var totalDragX = 0f
                             var totalDragY = 0f
@@ -152,6 +155,10 @@ fun CropOverlayCanvas(
                                             imgAspect = imgAspect
                                         )
                                         liveRect = updated
+                                        if (!gestureSnapshotTriggered) {
+                                            gestureSnapshotTriggered = true
+                                            currentOnCropGestureStart()
+                                        }
                                         currentOnCropRectChange(updated)
                                         hasMoved = true
                                     }
@@ -169,6 +176,10 @@ fun CropOverlayCanvas(
                                     if (!hasMoved) {
                                         if (kotlin.math.hypot(totalDragX, totalDragY) > touchSlop) {
                                             hasMoved = true
+                                            if (!gestureSnapshotTriggered) {
+                                                gestureSnapshotTriggered = true
+                                                currentOnCropGestureStart()
+                                            }
                                         }
                                     }
 

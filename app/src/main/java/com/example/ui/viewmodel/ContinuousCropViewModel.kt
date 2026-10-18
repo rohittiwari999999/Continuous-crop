@@ -16,6 +16,7 @@ import com.example.util.BitmapUtils
 import com.example.util.MediaStoreHelper
 import com.example.util.PassportDetectionHelper
 import com.example.util.PhotoNumberOcrHelper
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,12 +24,30 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+data class CropHistorySnapshot(
+    val cropRect: CropRect,
+    val selectedDetectedBoxIndex: Int,
+    val selectedSavedItemId: String?,
+    val detectedPassportBoxes: List<DetectedPassportBox>,
+    val imageRotation: Int,
+    val isFlippedHorizontal: Boolean,
+    val activeAspectRatio: AspectRatio,
+    val detectedNumber: String?
+)
+
 class ContinuousCropViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepository = SettingsRepository(application.applicationContext)
 
     private val _uiState = MutableStateFlow(ContinuousCropUiState())
     val uiState: StateFlow<ContinuousCropUiState> = _uiState.asStateFlow()
+
+    private val undoStack = ArrayDeque<CropHistorySnapshot>()
+    private val redoStack = ArrayDeque<CropHistorySnapshot>()
+    private val maxHistory = 30
+
+    private var autoPassportJob: Job? = null
+    private var activeOcrJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -46,35 +65,195 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
         loadSampleImage()
     }
 
+    fun saveSnapshotForUndo() {
+        val state = _uiState.value
+        val snapshot = CropHistorySnapshot(
+            cropRect = state.cropRect,
+            selectedDetectedBoxIndex = state.selectedDetectedBoxIndex,
+            selectedSavedItemId = state.selectedSavedItemId,
+            detectedPassportBoxes = state.detectedPassportBoxes,
+            imageRotation = state.imageRotation,
+            isFlippedHorizontal = state.isFlippedHorizontal,
+            activeAspectRatio = state.activeAspectRatio,
+            detectedNumber = state.detectedNumberForCurrentCrop
+        )
+        if (undoStack.lastOrNull() != snapshot) {
+            if (undoStack.size >= maxHistory) {
+                undoStack.removeFirst()
+            }
+            undoStack.addLast(snapshot)
+            redoStack.clear()
+            _uiState.update {
+                it.copy(canUndo = true, canRedo = false)
+            }
+        }
+    }
+
+    fun onCropGestureStart() {
+        saveSnapshotForUndo()
+    }
+
+    fun undo() {
+        if (undoStack.isEmpty()) return
+        val state = _uiState.value
+        val currentSnapshot = CropHistorySnapshot(
+            cropRect = state.cropRect,
+            selectedDetectedBoxIndex = state.selectedDetectedBoxIndex,
+            selectedSavedItemId = state.selectedSavedItemId,
+            detectedPassportBoxes = state.detectedPassportBoxes,
+            imageRotation = state.imageRotation,
+            isFlippedHorizontal = state.isFlippedHorizontal,
+            activeAspectRatio = state.activeAspectRatio,
+            detectedNumber = state.detectedNumberForCurrentCrop
+        )
+        redoStack.addLast(currentSnapshot)
+        val prev = undoStack.removeLast()
+        _uiState.update {
+            it.copy(
+                cropRect = prev.cropRect,
+                selectedDetectedBoxIndex = prev.selectedDetectedBoxIndex,
+                selectedSavedItemId = prev.selectedSavedItemId,
+                detectedPassportBoxes = prev.detectedPassportBoxes,
+                imageRotation = prev.imageRotation,
+                isFlippedHorizontal = prev.isFlippedHorizontal,
+                activeAspectRatio = prev.activeAspectRatio,
+                detectedNumberForCurrentCrop = prev.detectedNumber,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = true,
+                statusMessage = "Undo applied"
+            )
+        }
+    }
+
+    fun redo() {
+        if (redoStack.isEmpty()) return
+        val state = _uiState.value
+        val currentSnapshot = CropHistorySnapshot(
+            cropRect = state.cropRect,
+            selectedDetectedBoxIndex = state.selectedDetectedBoxIndex,
+            selectedSavedItemId = state.selectedSavedItemId,
+            detectedPassportBoxes = state.detectedPassportBoxes,
+            imageRotation = state.imageRotation,
+            isFlippedHorizontal = state.isFlippedHorizontal,
+            activeAspectRatio = state.activeAspectRatio,
+            detectedNumber = state.detectedNumberForCurrentCrop
+        )
+        undoStack.addLast(currentSnapshot)
+        val next = redoStack.removeLast()
+        _uiState.update {
+            it.copy(
+                cropRect = next.cropRect,
+                selectedDetectedBoxIndex = next.selectedDetectedBoxIndex,
+                selectedSavedItemId = next.selectedSavedItemId,
+                detectedPassportBoxes = next.detectedPassportBoxes,
+                imageRotation = next.imageRotation,
+                isFlippedHorizontal = next.isFlippedHorizontal,
+                activeAspectRatio = next.activeAspectRatio,
+                detectedNumberForCurrentCrop = next.detectedNumber,
+                canUndo = true,
+                canRedo = redoStack.isNotEmpty(),
+                statusMessage = "Redo applied"
+            )
+        }
+    }
+
+    fun clearDetectedBoxes() {
+        saveSnapshotForUndo()
+        _uiState.update {
+            it.copy(
+                detectedPassportBoxes = emptyList(),
+                selectedDetectedBoxIndex = -1,
+                selectedSavedItemId = null,
+                cropRect = CropRect.DEFAULT,
+                statusMessage = "Exited passport mode"
+            )
+        }
+    }
+
     fun loadSampleImage() {
+        autoPassportJob?.cancel()
+        activeOcrJob?.cancel()
+        undoStack.clear()
+        redoStack.clear()
         viewModelScope.launch {
             val sampleBitmap = BitmapUtils.createSampleWorkstationImage()
-            _uiState.update {
-                it.copy(
+            _uiState.update { current ->
+                current.copy(
                     sourceBitmap = sampleBitmap,
                     sourceUri = null,
                     imageRotation = 0,
                     isFlippedHorizontal = false,
-                    cropRect = CropRect.DEFAULT
+                    cropRect = CropRect.DEFAULT,
+                    activeAspectRatio = current.appSettings.defaultAspectRatio,
+                    detectedPassportBoxes = emptyList(),
+                    selectedDetectedBoxIndex = -1,
+                    selectedSavedItemId = null,
+                    detectedNumberForCurrentCrop = null,
+                    detectedFaceBoxCount = 0,
+                    savedItems = emptyList(),
+                    lastSavedId = null,
+                    selectedDetailItem = null,
+                    isProcessingAutoPassport = false,
+                    autoPassportProgress = 0f,
+                    inFlightCount = 0,
+                    canUndo = false,
+                    canRedo = false,
+                    statusMessage = null
                 )
             }
         }
     }
 
     fun loadFromUri(context: Context, uri: Uri) {
+        // Cancel all ongoing background tasks from previous photo immediately
+        autoPassportJob?.cancel()
+        activeOcrJob?.cancel()
+        undoStack.clear()
+        redoStack.clear()
+
         viewModelScope.launch {
-            _uiState.update { it.copy(inFlightCount = it.inFlightCount + 1) }
+            _uiState.update { current ->
+                current.copy(
+                    inFlightCount = current.inFlightCount + 1,
+                    // Clear previous photo's background selectors & tasks immediately
+                    detectedPassportBoxes = emptyList(),
+                    selectedDetectedBoxIndex = -1,
+                    selectedSavedItemId = null,
+                    detectedNumberForCurrentCrop = null,
+                    detectedFaceBoxCount = 0,
+                    savedItems = emptyList(),
+                    lastSavedId = null,
+                    selectedDetailItem = null,
+                    isProcessingAutoPassport = false,
+                    autoPassportProgress = 0f,
+                    canUndo = false,
+                    canRedo = false
+                )
+            }
             val bitmap = BitmapUtils.decodeSampledBitmapFromUri(context, uri)
             if (bitmap != null) {
-                _uiState.update {
-                    it.copy(
+                _uiState.update { current ->
+                    current.copy(
                         sourceBitmap = bitmap,
                         sourceUri = uri,
                         imageRotation = 0,
                         isFlippedHorizontal = false,
                         cropRect = CropRect.DEFAULT,
-                        inFlightCount = (it.inFlightCount - 1).coerceAtLeast(0),
-                        statusMessage = "Image loaded successfully"
+                        activeAspectRatio = current.appSettings.defaultAspectRatio,
+                        detectedPassportBoxes = emptyList(),
+                        selectedDetectedBoxIndex = -1,
+                        selectedSavedItemId = null,
+                        detectedNumberForCurrentCrop = null,
+                        detectedFaceBoxCount = 0,
+                        savedItems = emptyList(),
+                        lastSavedId = null,
+                        selectedDetailItem = null,
+                        isProcessingAutoPassport = false,
+                        autoPassportProgress = 0f,
+                        inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0),
+                        canUndo = false,
+                        canRedo = false,
+                        statusMessage = "New photo opened. Ready for fresh crop."
                     )
                 }
             } else {
@@ -102,6 +281,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun setAspectRatio(aspectRatio: AspectRatio) {
+        saveSnapshotForUndo()
         val current = _uiState.value
         val ratio = aspectRatio.ratio
 
@@ -141,18 +321,21 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun rotateClockwise() {
+        saveSnapshotForUndo()
         _uiState.update {
             it.copy(imageRotation = (it.imageRotation + 90) % 360)
         }
     }
 
     fun flipHorizontal() {
+        saveSnapshotForUndo()
         _uiState.update {
             it.copy(isFlippedHorizontal = !it.isFlippedHorizontal)
         }
     }
 
     fun resetCrop() {
+        saveSnapshotForUndo()
         _uiState.update {
             it.copy(
                 cropRect = CropRect.DEFAULT,
@@ -244,7 +427,8 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
         val state = _uiState.value
         val bmp = state.sourceBitmap ?: return
 
-        viewModelScope.launch {
+        autoPassportJob?.cancel()
+        autoPassportJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isProcessingAutoPassport = true,
@@ -318,6 +502,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
             }
 
             val firstBox = boxes.firstOrNull()
+            saveSnapshotForUndo()
             _uiState.update { current ->
                 current.copy(
                     detectedPassportBoxes = boxes,
@@ -455,6 +640,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun selectSavedItemForEditing(item: SavedCropItem) {
+        saveSnapshotForUndo()
         val state = _uiState.value
         val boxIndex = state.detectedPassportBoxes.indexOfFirst {
             it.savedItemId == item.id
@@ -487,6 +673,7 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun selectDetectedBox(index: Int) {
+        saveSnapshotForUndo()
         val state = _uiState.value
         val boxes = state.detectedPassportBoxes
         if (index in boxes.indices) {
@@ -526,7 +713,8 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
         val state = _uiState.value
         val bmp = state.sourceBitmap ?: return
 
-        viewModelScope.launch {
+        activeOcrJob?.cancel()
+        activeOcrJob = viewModelScope.launch {
             val detected = PhotoNumberOcrHelper.detectNumberAroundCrop(
                 source = bmp,
                 cropRect = state.cropRect,
