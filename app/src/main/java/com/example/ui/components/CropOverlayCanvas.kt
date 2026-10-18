@@ -4,7 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,16 +71,17 @@ fun CropOverlayCanvas(
 ) {
     if (bitmap == null) return
 
-    var activeHandle by remember { mutableStateOf(CropHandle.NONE) }
+    val currentCropRect by rememberUpdatedState(cropRect)
+    val currentAspectRatio by rememberUpdatedState(aspectRatio)
+    val currentOnCropRectChange by rememberUpdatedState(onCropRectChange)
+    val currentOnSelectDetectedBox by rememberUpdatedState(onSelectDetectedBox)
+    val currentDetectedPassportBoxes by rememberUpdatedState(detectedPassportBoxes)
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .testTag("crop_overlay_canvas")
     ) {
-        val containerWidth = maxWidth.value
-        val containerHeight = maxHeight.value
-
         val orientedW = if (rotation % 180 != 0) bitmap.height else bitmap.width
         val orientedH = if (rotation % 180 != 0) bitmap.width else bitmap.height
 
@@ -97,73 +100,119 @@ fun CropOverlayCanvas(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(cropRect, aspectRatio, transformedBitmap) {
-                        detectDragGestures(
-                            onDragStart = { startOffset ->
-                                val canvasW = size.width.toFloat()
-                                val canvasH = size.height.toFloat()
-                                val imgRect = calculateImageBounds(
-                                    canvasW, canvasH,
-                                    transformedBitmap.width.toFloat(),
-                                    transformedBitmap.height.toFloat()
-                                )
+                    .pointerInput(transformedBitmap) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val canvasW = size.width.toFloat()
+                            val canvasH = size.height.toFloat()
+                            val imgRect = calculateImageBounds(
+                                canvasW, canvasH,
+                                transformedBitmap.width.toFloat(),
+                                transformedBitmap.height.toFloat()
+                            )
 
-                                val normX = ((startOffset.x - imgRect.left) / imgRect.width).coerceIn(0f, 1f)
-                                val normY = ((startOffset.y - imgRect.top) / imgRect.height).coerceIn(0f, 1f)
+                            val normX = ((down.position.x - imgRect.left) / imgRect.width).coerceIn(0f, 1f)
+                            val normY = ((down.position.y - imgRect.top) / imgRect.height).coerceIn(0f, 1f)
 
-                                val handle = hitTestHandle(normX, normY, cropRect, imgRect.width, imgRect.height)
-                                if (handle == CropHandle.NONE) {
-                                    val tappedBox = detectedPassportBoxes.firstOrNull { box ->
-                                        normX in box.cropRect.left..box.cropRect.right &&
-                                        normY in box.cropRect.top..box.cropRect.bottom
+                            var liveRect = currentCropRect
+                            val initialHandle = hitTestHandle(normX, normY, liveRect, imgRect.width, imgRect.height)
+                            var activeHandle = initialHandle
+
+                            var prevCentroid = down.position
+                            var prevSpan = 0f
+                            var hasMoved = false
+                            val touchSlop = viewConfiguration.touchSlop
+                            var totalDragX = 0f
+                            var totalDragY = 0f
+
+                            do {
+                                val event = awaitPointerEvent()
+                                val pressed = event.changes.filter { it.pressed }
+
+                                if (pressed.size >= 2) {
+                                    // Pinch-to-zoom and 2-finger pan: smooth scaling of crop selector
+                                    val p1 = pressed[0].position
+                                    val p2 = pressed[1].position
+                                    val currSpan = kotlin.math.hypot(p1.x - p2.x, p1.y - p2.y)
+                                    val currCentroid = (p1 + p2) / 2f
+
+                                    if (prevSpan > 10f && currSpan > 10f) {
+                                        val zoomFactor = currSpan / prevSpan
+                                        val pan = currCentroid - prevCentroid
+                                        val panNormX = pan.x / imgRect.width
+                                        val panNormY = pan.y / imgRect.height
+
+                                        val imgAspect = imgRect.width / imgRect.height
+                                        val updated = applyZoomAndPan(
+                                            rect = liveRect,
+                                            zoom = zoomFactor,
+                                            panX = panNormX,
+                                            panY = panNormY,
+                                            aspectRatio = currentAspectRatio,
+                                            imgAspect = imgAspect
+                                        )
+                                        liveRect = updated
+                                        currentOnCropRectChange(updated)
+                                        hasMoved = true
                                     }
-                                    if (tappedBox != null) {
-                                        onSelectDetectedBox(tappedBox.index)
-                                        activeHandle = CropHandle.NONE
-                                    } else {
-                                        // Center crop box on the tapped random person/area
-                                        val w = cropRect.width
-                                        val h = cropRect.height
-                                        val newL = (normX - w / 2f).coerceIn(0f, 1f - w)
-                                        val newT = (normY - h / 2f).coerceIn(0f, 1f - h)
-                                        val repositioned = CropRect(newL, newT, newL + w, newT + h)
-                                        onCropRectChange(repositioned)
-                                        activeHandle = CropHandle.INSIDE
+                                    prevSpan = currSpan
+                                    prevCentroid = currCentroid
+                                    event.changes.forEach { it.consume() }
+
+                                } else if (pressed.size == 1) {
+                                    val pointer = pressed[0]
+                                    prevSpan = 0f
+                                    val delta = pointer.position - pointer.previousPosition
+                                    totalDragX += delta.x
+                                    totalDragY += delta.y
+
+                                    if (!hasMoved) {
+                                        if (kotlin.math.hypot(totalDragX, totalDragY) > touchSlop) {
+                                            hasMoved = true
+                                        }
                                     }
-                                } else {
-                                    activeHandle = handle
+
+                                    if (hasMoved) {
+                                        val panNormX = delta.x / imgRect.width
+                                        val panNormY = delta.y / imgRect.height
+                                        val imgAspect = imgRect.width / imgRect.height
+
+                                        val effectiveHandle = if (activeHandle == CropHandle.NONE) CropHandle.INSIDE else activeHandle
+                                        val updated = applyDrag(
+                                            effectiveHandle,
+                                            liveRect,
+                                            panNormX,
+                                            panNormY,
+                                            currentAspectRatio,
+                                            imgAspect
+                                        )
+                                        liveRect = updated
+                                        currentOnCropRectChange(updated)
+                                        pointer.consume()
+                                    }
+                                    prevCentroid = pointer.position
                                 }
-                            },
-                            onDragEnd = {
-                                activeHandle = CropHandle.NONE
-                            },
-                            onDragCancel = {
-                                activeHandle = CropHandle.NONE
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                val canvasW = size.width.toFloat()
-                                val canvasH = size.height.toFloat()
-                                val imgRect = calculateImageBounds(
-                                    canvasW, canvasH,
-                                    transformedBitmap.width.toFloat(),
-                                    transformedBitmap.height.toFloat()
-                                )
+                            } while (event.changes.any { it.pressed })
 
-                                val deltaNormX = dragAmount.x / imgRect.width
-                                val deltaNormY = dragAmount.y / imgRect.height
-
-                                val updated = applyDrag(
-                                    activeHandle,
-                                    cropRect,
-                                    deltaNormX,
-                                    deltaNormY,
-                                    aspectRatio,
-                                    imgRect.width / imgRect.height
-                                )
-                                onCropRectChange(updated)
+                            // When finger is released without dragging: Quick Tap
+                            if (!hasMoved) {
+                                val tappedBox = currentDetectedPassportBoxes.firstOrNull { box ->
+                                    normX in box.cropRect.left..box.cropRect.right &&
+                                    normY in box.cropRect.top..box.cropRect.bottom
+                                }
+                                if (tappedBox != null) {
+                                    currentOnSelectDetectedBox(tappedBox.index)
+                                } else if (activeHandle == CropHandle.NONE) {
+                                    // Reposition/center crop on tapped person or area
+                                    val w = liveRect.width
+                                    val h = liveRect.height
+                                    val newL = (normX - w / 2f).coerceIn(0f, 1f - w)
+                                    val newT = (normY - h / 2f).coerceIn(0f, 1f - h)
+                                    val repositioned = CropRect(newL, newT, newL + w, newT + h)
+                                    currentOnCropRectChange(repositioned)
+                                }
                             }
-                        )
+                        }
                     }
             ) {
                 val canvasW = size.width
@@ -275,7 +324,7 @@ private fun hitTestHandle(
     imgWidthPx: Float,
     imgHeightPx: Float
 ): CropHandle {
-    val thresholdPx = 48f
+    val thresholdPx = 64f
     val threshX = thresholdPx / imgWidthPx
     val threshY = thresholdPx / imgHeightPx
 
@@ -301,6 +350,43 @@ private fun hitTestHandle(
     }
 }
 
+private fun applyZoomAndPan(
+    rect: CropRect,
+    zoom: Float,
+    panX: Float,
+    panY: Float,
+    aspectRatio: AspectRatio,
+    imgAspect: Float
+): CropRect {
+    val minSize = 0.05f
+    val oldW = rect.width
+    val oldH = rect.height
+
+    val newW = (oldW * zoom).coerceIn(minSize, 1f)
+    val ratio = aspectRatio.ratio
+
+    val finalW: Float
+    val finalH: Float
+    if (ratio != null) {
+        val targetH = (newW * imgAspect / ratio).coerceIn(minSize, 1f)
+        finalH = targetH
+        finalW = (targetH * ratio / imgAspect).coerceIn(minSize, 1f)
+    } else {
+        finalW = newW
+        finalH = (oldH * zoom).coerceIn(minSize, 1f)
+    }
+
+    val cx = (rect.centerX + panX).coerceIn(finalW / 2f, 1f - finalW / 2f)
+    val cy = (rect.centerY + panY).coerceIn(finalH / 2f, 1f - finalH / 2f)
+
+    val l = (cx - finalW / 2f).coerceIn(0f, 1f - finalW)
+    val t = (cy - finalH / 2f).coerceIn(0f, 1f - finalH)
+    val r = (l + finalW).coerceAtMost(1f)
+    val b = (t + finalH).coerceAtMost(1f)
+
+    return CropRect(l, t, r, b).clamped()
+}
+
 private fun applyDrag(
     handle: CropHandle,
     rect: CropRect,
@@ -315,6 +401,7 @@ private fun applyDrag(
     var b = rect.bottom
 
     val minSize = 0.05f
+    val ratio = aspectRatio.ratio
 
     when (handle) {
         CropHandle.INSIDE -> {
@@ -327,40 +414,80 @@ private fun applyDrag(
         CropHandle.TOP_LEFT -> {
             l = (l + dx).coerceIn(0f, r - minSize)
             t = (t + dy).coerceIn(0f, b - minSize)
+            if (ratio != null) {
+                val currW = (r - l)
+                val targetH = (currW * imgAspect / ratio).coerceIn(minSize, 1f)
+                t = (b - targetH).coerceAtLeast(0f)
+                l = (r - (targetH * ratio / imgAspect)).coerceAtLeast(0f)
+            }
         }
         CropHandle.TOP_RIGHT -> {
             r = (r + dx).coerceIn(l + minSize, 1f)
             t = (t + dy).coerceIn(0f, b - minSize)
+            if (ratio != null) {
+                val currW = (r - l)
+                val targetH = (currW * imgAspect / ratio).coerceIn(minSize, 1f)
+                t = (b - targetH).coerceAtLeast(0f)
+                r = (l + (targetH * ratio / imgAspect)).coerceAtMost(1f)
+            }
         }
         CropHandle.BOTTOM_LEFT -> {
             l = (l + dx).coerceIn(0f, r - minSize)
             b = (b + dy).coerceIn(t + minSize, 1f)
+            if (ratio != null) {
+                val currW = (r - l)
+                val targetH = (currW * imgAspect / ratio).coerceIn(minSize, 1f - t)
+                b = (t + targetH).coerceAtMost(1f)
+                l = (r - (targetH * ratio / imgAspect)).coerceAtLeast(0f)
+            }
         }
         CropHandle.BOTTOM_RIGHT -> {
             r = (r + dx).coerceIn(l + minSize, 1f)
             b = (b + dy).coerceIn(t + minSize, 1f)
+            if (ratio != null) {
+                val currW = (r - l)
+                val targetH = (currW * imgAspect / ratio).coerceIn(minSize, 1f - t)
+                b = (t + targetH).coerceAtMost(1f)
+                r = (l + (targetH * ratio / imgAspect)).coerceAtMost(1f)
+            }
         }
         CropHandle.TOP -> {
             t = (t + dy).coerceIn(0f, b - minSize)
+            if (ratio != null) {
+                val targetW = ((b - t) * ratio / imgAspect).coerceIn(minSize, 1f)
+                val cx = (l + r) / 2f
+                l = (cx - targetW / 2f).coerceIn(0f, 1f - targetW)
+                r = (l + targetW).coerceAtMost(1f)
+            }
         }
         CropHandle.BOTTOM -> {
             b = (b + dy).coerceIn(t + minSize, 1f)
+            if (ratio != null) {
+                val targetW = ((b - t) * ratio / imgAspect).coerceIn(minSize, 1f)
+                val cx = (l + r) / 2f
+                l = (cx - targetW / 2f).coerceIn(0f, 1f - targetW)
+                r = (l + targetW).coerceAtMost(1f)
+            }
         }
         CropHandle.LEFT -> {
             l = (l + dx).coerceIn(0f, r - minSize)
+            if (ratio != null) {
+                val targetH = ((r - l) * imgAspect / ratio).coerceIn(minSize, 1f)
+                val cy = (t + b) / 2f
+                t = (cy - targetH / 2f).coerceIn(0f, 1f - targetH)
+                b = (t + targetH).coerceAtMost(1f)
+            }
         }
         CropHandle.RIGHT -> {
             r = (r + dx).coerceIn(l + minSize, 1f)
+            if (ratio != null) {
+                val targetH = ((r - l) * imgAspect / ratio).coerceIn(minSize, 1f)
+                val cy = (t + b) / 2f
+                t = (cy - targetH / 2f).coerceIn(0f, 1f - targetH)
+                b = (t + targetH).coerceAtMost(1f)
+            }
         }
         CropHandle.NONE -> return rect
-    }
-
-    // Aspect ratio enforcement if locked
-    val ratio = aspectRatio.ratio
-    if (ratio != null) {
-        val currW = (r - l)
-        val targetH = (currW * imgAspect / ratio).coerceIn(minSize, 1f - t)
-        b = (t + targetH).coerceAtMost(1f)
     }
 
     return CropRect(l, t, r, b).clamped()
@@ -410,29 +537,33 @@ private fun DrawScope.drawHandles(
     right: Float,
     bottom: Float
 ) {
-    val cornerLen = 22f
-    val cornerThickness = 4f
+    val cornerLen = 26f
+    val cornerThickness = 4.5f
     val handleColor = NeonCyan
 
     // Corner brackets
     // Top-Left
     drawLine(handleColor, Offset(left, top), Offset(left + cornerLen, top), cornerThickness)
     drawLine(handleColor, Offset(left, top), Offset(left, top + cornerLen), cornerThickness)
+    drawCircle(handleColor, radius = 4f, center = Offset(left, top))
 
     // Top-Right
     drawLine(handleColor, Offset(right, top), Offset(right - cornerLen, top), cornerThickness)
     drawLine(handleColor, Offset(right, top), Offset(right, top + cornerLen), cornerThickness)
+    drawCircle(handleColor, radius = 4f, center = Offset(right, top))
 
     // Bottom-Left
     drawLine(handleColor, Offset(left, bottom), Offset(left + cornerLen, bottom), cornerThickness)
     drawLine(handleColor, Offset(left, bottom), Offset(left, bottom - cornerLen), cornerThickness)
+    drawCircle(handleColor, radius = 4f, center = Offset(left, bottom))
 
     // Bottom-Right
     drawLine(handleColor, Offset(right, bottom), Offset(right - cornerLen, bottom), cornerThickness)
     drawLine(handleColor, Offset(right, bottom), Offset(right, bottom - cornerLen), cornerThickness)
+    drawCircle(handleColor, radius = 4f, center = Offset(right, bottom))
 
     // Edge middle pills
-    val pillLen = 14f
+    val pillLen = 16f
     val midX = (left + right) / 2f
     val midY = (top + bottom) / 2f
 

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -87,8 +88,14 @@ fun SavedRibbonBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 8.dp)
+            .padding(top = 10.dp, bottom = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .border(1.dp, WorkspaceBorder, RoundedCornerShape(16.dp))
             .testTag("saved_items_ribbon"),
         color = WorkspaceSurface,
+        shape = RoundedCornerShape(16.dp),
         tonalElevation = 6.dp,
         shadowElevation = 8.dp
     ) {
@@ -104,25 +111,25 @@ fun SavedRibbonBar(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = onBackClick,
-                        modifier = Modifier.size(36.dp).testTag("top_back_button")
+                        modifier = Modifier.size(42.dp).testTag("top_back_button")
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = TextPrimary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
                     IconButton(
                         onClick = onMenuClick,
-                        modifier = Modifier.size(36.dp).testTag("menu_drawer_button")
+                        modifier = Modifier.size(42.dp).testTag("menu_drawer_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Menu,
                             contentDescription = "Menu Drawer",
                             tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
@@ -193,26 +200,26 @@ fun SavedRibbonBar(
                     if (savedItems.isNotEmpty()) {
                         IconButton(
                             onClick = onClearAllClick,
-                            modifier = Modifier.size(36.dp).testTag("clear_all_ribbon_button")
+                            modifier = Modifier.size(42.dp).testTag("clear_all_ribbon_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DeleteSweep,
                                 contentDescription = "Clear All Saved",
                                 tint = TextSecondary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
 
                     IconButton(
                         onClick = onSettingsClick,
-                        modifier = Modifier.size(36.dp).testTag("settings_button")
+                        modifier = Modifier.size(42.dp).testTag("settings_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = "Settings",
                             tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }

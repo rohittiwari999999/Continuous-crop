@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -78,15 +80,21 @@ fun CropControlBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 10.dp)
+            .padding(bottom = 14.dp, top = 6.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .border(1.dp, WorkspaceBorder, RoundedCornerShape(20.dp))
             .testTag("crop_control_bar"),
         color = WorkspaceSurface,
+        shape = RoundedCornerShape(20.dp),
         tonalElevation = 8.dp,
-        shadowElevation = 12.dp
+        shadowElevation = 14.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
             // Row 1: Sheet Navigation (if multiple photos) + Aspect Ratio Chips (Horizontal Scroll)
             Row(
@@ -186,7 +194,7 @@ fun CropControlBar(
                 ) {
                     IconButton(
                         onClick = onPickImageClick,
-                        modifier = Modifier.size(38.dp).testTag("pick_image_icon_button")
+                        modifier = Modifier.size(42.dp).testTag("pick_image_icon_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.PhotoLibrary,
@@ -199,39 +207,39 @@ fun CropControlBar(
                     IconButton(
                         onClick = onRotateClick,
                         enabled = hasImage,
-                        modifier = Modifier.size(38.dp).testTag("rotate_button")
+                        modifier = Modifier.size(42.dp).testTag("rotate_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.RotateRight,
                             contentDescription = "Rotate 90°",
                             tint = if (hasImage) TextPrimary else TextSecondary.copy(alpha = 0.35f),
-                            modifier = Modifier.size(21.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
                     IconButton(
                         onClick = onFlipClick,
                         enabled = hasImage,
-                        modifier = Modifier.size(38.dp).testTag("flip_button")
+                        modifier = Modifier.size(42.dp).testTag("flip_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Flip,
                             contentDescription = "Flip Horizontal",
                             tint = if (hasImage) TextPrimary else TextSecondary.copy(alpha = 0.35f),
-                            modifier = Modifier.size(21.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
                     IconButton(
                         onClick = onResetClick,
                         enabled = hasImage,
-                        modifier = Modifier.size(38.dp).testTag("reset_button")
+                        modifier = Modifier.size(42.dp).testTag("reset_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Reset Crop",
                             tint = if (hasImage) TextSecondary else TextSecondary.copy(alpha = 0.35f),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
@@ -245,26 +253,26 @@ fun CropControlBar(
                     Button(
                         onClick = onAutoPassportClick,
                         enabled = hasImage && !isProcessingAutoPassport,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AccentTeal,
                             contentColor = WorkspaceSurface,
                             disabledContainerColor = WorkspaceSurfaceVariant,
                             disabledContentColor = TextSecondary.copy(alpha = 0.35f)
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        modifier = Modifier.height(38.dp).testTag("auto_passport_button")
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.height(42.dp).testTag("auto_passport_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Face,
                             contentDescription = null,
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(19.dp)
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isProcessingAutoPassport) "Detecting..." else "Auto Passport",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontSize = 13.sp
                         )
                     }
 
@@ -272,26 +280,26 @@ fun CropControlBar(
                     Button(
                         onClick = onCropAndSaveClick,
                         enabled = hasImage && !isProcessingAutoPassport,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = NeonCyan,
                             contentColor = WorkspaceSurface,
                             disabledContainerColor = WorkspaceSurfaceVariant,
                             disabledContentColor = TextSecondary.copy(alpha = 0.35f)
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        modifier = Modifier.height(38.dp).testTag("save_crop_button")
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.height(42.dp).testTag("save_crop_button")
                     ) {
                         Icon(
                             imageVector = if (isEditing) Icons.Default.DownloadDone else Icons.Default.Crop,
                             contentDescription = null,
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(19.dp)
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isEditing) "Update" else "Save",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontSize = 13.sp
                         )
                     }
                 }

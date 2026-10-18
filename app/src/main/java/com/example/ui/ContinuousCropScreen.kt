@@ -155,7 +155,8 @@ fun ContinuousCropScreen(
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
-            containerColor = WorkspaceBackground
+            containerColor = WorkspaceBackground,
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)
         ) { paddingValues ->
             Box(
                 modifier = Modifier
