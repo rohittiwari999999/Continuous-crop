@@ -286,35 +286,26 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
 
                 val thumb = BitmapUtils.createThumbnail(cropped)
 
-                val saveResult = MediaStoreHelper.saveCroppedBitmap(
-                    context = context.applicationContext,
-                    bitmap = cropped,
-                    format = state.appSettings.outputFormat.compressFormat,
-                    quality = state.appSettings.jpegQuality,
-                    prefix = if (mode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) "PASSPORT_SIGN_" else "PASSPORT_",
-                    albumName = state.appSettings.storageAlbumName,
-                    customName = detectedNum
-                )
-
                 val itemId = UUID.randomUUID().toString()
                 if (firstSavedId == null) {
                     firstSavedId = itemId
                 }
 
-                val savedItem = SavedCropItem(
+                // In-memory preview only: NOT saved to phone storage until user taps Save button
+                val previewItem = SavedCropItem(
                     id = itemId,
-                    uri = saveResult.uri,
-                    filePath = saveResult.filePath,
+                    uri = null,
+                    filePath = null,
                     thumbnailBitmap = thumb,
                     cropWidth = cropped.width,
                     cropHeight = cropped.height,
                     aspectRatioLabel = if (mode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) "Passport+Sign" else "Passport",
                     timestamp = System.currentTimeMillis() + index,
-                    fileSizeBytes = saveResult.sizeBytes,
+                    fileSizeBytes = 0L,
                     detectedName = detectedNum,
                     cropRect = item.cropRect
                 )
-                newSavedItems.add(savedItem)
+                newSavedItems.add(previewItem)
 
                 val box = DetectedPassportBox(
                     id = UUID.randomUUID().toString(),
@@ -333,7 +324,11 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     selectedDetectedBoxIndex = 0,
                     cropRect = firstBox?.cropRect ?: current.cropRect,
                     detectedNumberForCurrentCrop = firstBox?.detectedName,
-                    activeAspectRatio = AspectRatio.PASSPORT,
+                    activeAspectRatio = if (mode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
+                        AspectRatio.FREE
+                    } else {
+                        AspectRatio.PASSPORT
+                    },
                     savedItems = newSavedItems + current.savedItems,
                     lastSavedId = firstSavedId,
                     selectedSavedItemId = firstSavedId,
@@ -342,12 +337,12 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     detectedFaceBoxCount = boxes.size,
                     statusMessage = if (boxes.size > 1) {
                         if (mode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
-                            "Detected ${boxes.size} photos with signatures! Tap any to adjust & update."
+                            "Detected ${boxes.size} photos with signatures! Adjust crop, then tap Save to save to storage."
                         } else {
-                            "Detected ${boxes.size} passport photos! Tap any to adjust & update."
+                            "Detected ${boxes.size} passport photos! Adjust crop, then tap Save to save to storage."
                         }
                     } else {
-                        "Passport photo detected! Adjust handles if needed, then tap Update."
+                        "Passport photo detected! Adjust handles, then tap Save to save to storage."
                     }
                 )
             }
@@ -439,7 +434,11 @@ class ContinuousCropViewModel(application: Application) : AndroidViewModel(appli
                     lastSavedId = targetItemId,
                     selectedSavedItemId = targetItemId,
                     inFlightCount = (current.inFlightCount - 1).coerceAtLeast(0),
-                    statusMessage = "Updated photo '$rollName' in slider & storage"
+                    statusMessage = if (existingItem?.uri == null) {
+                        "Photo '$rollName' saved to phone storage & gallery!"
+                    } else {
+                        "Updated photo '$rollName' in slider & storage"
+                    }
                 )
             }
         }

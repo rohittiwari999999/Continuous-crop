@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Flip
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -61,6 +62,7 @@ fun CropControlBar(
     activeAspectRatio: AspectRatio,
     isProcessingAutoPassport: Boolean,
     isEditing: Boolean = false,
+    isAlreadySaved: Boolean = false,
     detectedBoxCount: Int = 0,
     selectedBoxIndex: Int = -1,
     currentScannedNumber: String? = null,
@@ -291,13 +293,13 @@ fun CropControlBar(
                         modifier = Modifier.height(42.dp).testTag("save_crop_button")
                     ) {
                         Icon(
-                            imageVector = if (isEditing) Icons.Default.DownloadDone else Icons.Default.Crop,
+                            imageVector = if (isEditing && isAlreadySaved) Icons.Default.DownloadDone else Icons.Default.Save,
                             contentDescription = null,
                             modifier = Modifier.size(19.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isEditing) "Update" else "Save",
+                            text = if (isEditing && isAlreadySaved) "Update" else "Save",
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         )

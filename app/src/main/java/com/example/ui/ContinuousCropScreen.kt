@@ -131,6 +131,7 @@ fun ContinuousCropScreen(
                     activeAspectRatio = uiState.activeAspectRatio,
                     isProcessingAutoPassport = uiState.isProcessingAutoPassport,
                     isEditing = isEditing,
+                    isAlreadySaved = uiState.isCurrentCropAlreadySaved,
                     detectedBoxCount = uiState.detectedPassportBoxes.size,
                     selectedBoxIndex = uiState.selectedDetectedBoxIndex,
                     currentScannedNumber = uiState.detectedNumberForCurrentCrop,

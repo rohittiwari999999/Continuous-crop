@@ -131,14 +131,10 @@ object PassportDetectionHelper {
 
         if (mlFaces.isEmpty()) {
             val imageAspect = srcW.toFloat() / srcH.toFloat()
-            var normW = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.55f else 0.65f
-            var normH = (normW * imageAspect) / PASSPORT_ASPECT_RATIO
-            if (normH > 0.88f) {
-                normH = 0.88f
-                normW = (normH * PASSPORT_ASPECT_RATIO) / imageAspect
-            }
+            val normW = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.45f else 0.60f
+            val normH = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.75f else (normW * imageAspect / PASSPORT_ASPECT_RATIO).coerceAtMost(0.85f)
             val left = ((1f - normW) / 2f).coerceIn(0f, 0.95f)
-            val top = 0.05f.coerceIn(0f, (1f - normH).coerceAtLeast(0f))
+            val top = 0.08f.coerceIn(0f, (1f - normH).coerceAtLeast(0f))
             val fallbackRect = CropRect(left, top, (left + normW).coerceAtMost(1f), (top + normH).coerceAtMost(1f))
             return@withContext listOf(
                 PassportFaceItem(
@@ -163,64 +159,48 @@ object PassportDetectionHelper {
         sortedFaces.map { face ->
             val box = face.boundingBox
             val faceH = box.height().toFloat().coerceAtLeast(10f)
+            val faceW = box.width().toFloat().coerceAtLeast(10f)
             val faceCenterX = box.centerX().toFloat()
 
-            var photoHeightPx: Float
-            var photoTopPx: Float
+            val photoTopPx: Float
+            val photoBottomPx: Float
+            val photoWidthPx: Float
 
             if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
                 // PHOTO + SIGNATURE BELOW:
-                // Captures student photo AND signature below the photo in a combined passport frame.
-                // Leaves scene above head, and extends down to encompass the signature.
-                photoHeightPx = faceH * 3.65f
-                photoTopPx = box.top.toFloat() - (faceH * 0.70f)
+                // Focus tightly on photo sticker and signature:
+                // 1. Top: Just above head/hair (stops before roll numbers / text written above).
+                // 2. Bottom: Down below signature line (captures full handwritten signature).
+                // 3. Width: Focused tightly on person's photo width (avoids side clutter/adjacent columns).
+                photoTopPx = (box.top.toFloat() - (faceH * 0.16f)).coerceAtLeast(0f)
+                photoBottomPx = (box.bottom.toFloat() + (faceH * 1.70f)).coerceAtMost(srcH.toFloat())
+                val targetW = (faceW * 1.30f).coerceIn(faceH * 0.95f, faceH * 1.15f)
+                photoWidthPx = targetW.coerceAtMost(srcW.toFloat())
             } else {
                 // STANDARD PASSPORT (PHOTO ONLY):
-                // Generous crop covering entire photo sticker with full hair, chest & shoulders.
-                // Gives comfortable margins around person without being tight on face.
-                photoHeightPx = faceH * 2.50f
-                photoTopPx = box.top.toFloat() - (faceH * 0.65f)
-            }
-
-            var photoWidthPx = photoHeightPx * PASSPORT_ASPECT_RATIO
-            var photoBottomPx = photoTopPx + photoHeightPx
-
-            // Ensure vertical bounds are within bitmap
-            if (photoTopPx < 0f) {
-                val shift = -photoTopPx
-                photoTopPx = 0f
-                photoBottomPx += shift
-            }
-            if (photoBottomPx > srcH) {
-                val overflow = photoBottomPx - srcH
-                photoTopPx = (photoTopPx - overflow).coerceAtLeast(0f)
-                photoBottomPx = srcH.toFloat()
-                photoHeightPx = photoBottomPx - photoTopPx
-                photoWidthPx = photoHeightPx * PASSPORT_ASPECT_RATIO
+                // Generous passport framing with full hair, chest, shoulders & surrounding scene
+                photoTopPx = (box.top.toFloat() - (faceH * 0.42f)).coerceAtLeast(0f)
+                photoBottomPx = (box.bottom.toFloat() + (faceH * 1.18f)).coerceAtMost(srcH.toFloat())
+                val h = photoBottomPx - photoTopPx
+                photoWidthPx = (h * PASSPORT_ASPECT_RATIO).coerceAtMost(srcW.toFloat())
             }
 
             var photoLeftPx = faceCenterX - (photoWidthPx / 2f)
             var photoRightPx = photoLeftPx + photoWidthPx
 
-            // Ensure horizontal bounds are within bitmap
+            // Ensure horizontal bounds are strictly within bitmap
             if (photoLeftPx < 0f) {
-                val shift = -photoLeftPx
                 photoLeftPx = 0f
-                photoRightPx += shift
-            }
-            if (photoRightPx > srcW) {
-                val overflow = photoRightPx - srcW
-                photoLeftPx = (photoLeftPx - overflow).coerceAtLeast(0f)
+                photoRightPx = photoWidthPx.coerceAtMost(srcW.toFloat())
+            } else if (photoRightPx > srcW) {
                 photoRightPx = srcW.toFloat()
-                photoWidthPx = photoRightPx - photoLeftPx
-                photoHeightPx = photoWidthPx / PASSPORT_ASPECT_RATIO
-                photoBottomPx = (photoTopPx + photoHeightPx).coerceAtMost(srcH.toFloat())
+                photoLeftPx = (srcW - photoWidthPx).coerceAtLeast(0f)
             }
 
-            val normLeft = (photoLeftPx / srcW).coerceIn(0f, 0.95f)
-            val normTop = (photoTopPx / srcH).coerceIn(0f, 0.95f)
-            val normRight = (photoRightPx / srcW).coerceIn(normLeft + 0.05f, 1f)
-            val normBottom = (photoBottomPx / srcH).coerceIn(normTop + 0.05f, 1f)
+            val normLeft = (photoLeftPx / srcW).coerceIn(0f, 0.98f)
+            val normTop = (photoTopPx / srcH).coerceIn(0f, 0.98f)
+            val normRight = (photoRightPx / srcW).coerceIn(normLeft + 0.02f, 1f)
+            val normBottom = (photoBottomPx / srcH).coerceIn(normTop + 0.02f, 1f)
 
             PassportFaceItem(
                 cropRect = CropRect(normLeft, normTop, normRight, normBottom),

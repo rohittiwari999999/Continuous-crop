@@ -252,6 +252,7 @@ fun SavedRibbonBar(
             // Editing detail bar placed BELOW photo slider, directly above canvas
             if (!selectedSavedItemId.isNullOrBlank()) {
                 val activeItem = savedItems.firstOrNull { it.id == selectedSavedItemId }
+                val isSavedToStorage = activeItem != null && (activeItem.uri != null || activeItem.filePath != null)
                 Surface(
                     color = WorkspaceSurfaceVariant,
                     shape = RoundedCornerShape(8.dp),
@@ -259,7 +260,7 @@ fun SavedRibbonBar(
                         .fillMaxWidth()
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .border(1.dp, if (isSavedToStorage) NeonCyan.copy(alpha = 0.5f) else AccentTeal.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                 ) {
                     Row(
                         modifier = Modifier
@@ -276,18 +277,22 @@ fun SavedRibbonBar(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(NeonCyan)
+                                    .background(if (isSavedToStorage) NeonCyan else AccentTeal)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Editing: ${activeItem?.detectedName ?: "Passport"}",
-                                color = NeonCyan,
+                                color = if (isSavedToStorage) NeonCyan else AccentTeal,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "(${activeItem?.cropWidth}×${activeItem?.cropHeight}) • Adjust crop & tap Update",
+                                text = if (isSavedToStorage) {
+                                    "(${activeItem?.cropWidth}×${activeItem?.cropHeight}) • Adjust & tap Update"
+                                } else {
+                                    "(${activeItem?.cropWidth}×${activeItem?.cropHeight}) • Adjust & tap Save"
+                                },
                                 color = TextSecondary,
                                 fontSize = 11.sp,
                                 maxLines = 1,

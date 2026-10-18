@@ -59,4 +59,11 @@ data class ContinuousCropUiState(
 
     val isEditingExistingCrop: Boolean
         get() = selectedSavedItemId != null || (selectedDetectedBoxIndex in detectedPassportBoxes.indices)
+
+    val isCurrentCropAlreadySaved: Boolean
+        get() {
+            val targetId = selectedSavedItemId ?: selectedDetectedBox?.savedItemId
+            val item = savedItems.firstOrNull { it.id == targetId }
+            return item != null && (item.uri != null || item.filePath != null)
+        }
 }
