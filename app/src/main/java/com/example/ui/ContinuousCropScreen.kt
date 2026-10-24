@@ -5,14 +5,25 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,9 +33,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.ui.components.AppNavigationDrawer
 import com.example.ui.components.CropControlBar
 import com.example.ui.components.CropDetailDialog
@@ -32,7 +47,10 @@ import com.example.ui.components.CropOverlayCanvas
 import com.example.ui.components.PassportModeSelectionDialog
 import com.example.ui.components.SavedRibbonBar
 import com.example.ui.settings.SettingsScreen
+import com.example.ui.theme.NeonCyan
+import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.WorkspaceBackground
+import com.example.ui.theme.WorkspaceSurface
 import com.example.ui.viewmodel.ContinuousCropViewModel
 import com.example.util.ShareHelper
 import kotlinx.coroutines.launch
@@ -179,6 +197,7 @@ fun ContinuousCropScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
+                val isSampleImage = uiState.sourceUri == null
                 CropOverlayCanvas(
                     bitmap = uiState.sourceBitmap,
                     cropRect = uiState.cropRect,
@@ -191,10 +210,54 @@ fun ContinuousCropScreen(
                     detectedPassportBoxes = uiState.detectedPassportBoxes,
                     selectedBoxIndex = uiState.selectedDetectedBoxIndex,
                     currentScannedNumber = uiState.detectedNumberForCurrentCrop,
+                    isSampleImage = isSampleImage,
+                    onScreenClickToPickImage = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
                     onSelectDetectedBox = { viewModel.selectDetectedBox(it) },
                     onCropRectChange = { viewModel.updateCropRect(it) },
                     onCropGestureStart = { viewModel.onCropGestureStart() }
                 )
+
+                // If initial sample student ID sheet is showing, clicking screen or banner opens gallery
+                if (isSampleImage) {
+                    Surface(
+                        color = WorkspaceSurface.copy(alpha = 0.94f),
+                        shape = RoundedCornerShape(24.dp),
+                        border = BorderStroke(1.5.dp, NeonCyan),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 16.dp)
+                            .clickable {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .testTag("tap_screen_open_gallery_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PhotoLibrary,
+                                contentDescription = null,
+                                tint = NeonCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Tap screen to select photo from Gallery",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
             }
         }
     }

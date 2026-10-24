@@ -66,6 +66,8 @@ fun CropOverlayCanvas(
     detectedPassportBoxes: List<DetectedPassportBox> = emptyList(),
     selectedBoxIndex: Int = -1,
     currentScannedNumber: String? = null,
+    isSampleImage: Boolean = false,
+    onScreenClickToPickImage: () -> Unit = {},
     onSelectDetectedBox: (Int) -> Unit = {},
     onCropRectChange: (CropRect) -> Unit,
     onCropGestureStart: () -> Unit = {},
@@ -79,6 +81,8 @@ fun CropOverlayCanvas(
     val currentOnCropGestureStart by rememberUpdatedState(onCropGestureStart)
     val currentOnSelectDetectedBox by rememberUpdatedState(onSelectDetectedBox)
     val currentDetectedPassportBoxes by rememberUpdatedState(detectedPassportBoxes)
+    val currentIsSampleImage by rememberUpdatedState(isSampleImage)
+    val currentOnScreenClickToPickImage by rememberUpdatedState(onScreenClickToPickImage)
 
     BoxWithConstraints(
         modifier = modifier
@@ -208,20 +212,25 @@ fun CropOverlayCanvas(
 
                             // When finger is released without dragging: Quick Tap
                             if (!hasMoved) {
-                                val tappedBox = currentDetectedPassportBoxes.firstOrNull { box ->
-                                    normX in box.cropRect.left..box.cropRect.right &&
-                                    normY in box.cropRect.top..box.cropRect.bottom
-                                }
-                                if (tappedBox != null) {
-                                    currentOnSelectDetectedBox(tappedBox.index)
-                                } else if (activeHandle == CropHandle.NONE) {
-                                    // Reposition/center crop on tapped person or area
-                                    val w = liveRect.width
-                                    val h = liveRect.height
-                                    val newL = (normX - w / 2f).coerceIn(0f, 1f - w)
-                                    val newT = (normY - h / 2f).coerceIn(0f, 1f - h)
-                                    val repositioned = CropRect(newL, newT, newL + w, newT + h)
-                                    currentOnCropRectChange(repositioned)
+                                if (currentIsSampleImage) {
+                                    // Clicking screen on default sample image opens phone gallery directly
+                                    currentOnScreenClickToPickImage()
+                                } else {
+                                    val tappedBox = currentDetectedPassportBoxes.firstOrNull { box ->
+                                        normX in box.cropRect.left..box.cropRect.right &&
+                                        normY in box.cropRect.top..box.cropRect.bottom
+                                    }
+                                    if (tappedBox != null) {
+                                        currentOnSelectDetectedBox(tappedBox.index)
+                                    } else if (activeHandle == CropHandle.NONE) {
+                                        // Reposition/center crop on tapped person or area
+                                        val w = liveRect.width
+                                        val h = liveRect.height
+                                        val newL = (normX - w / 2f).coerceIn(0f, 1f - w)
+                                        val newT = (normY - h / 2f).coerceIn(0f, 1f - h)
+                                        val repositioned = CropRect(newL, newT, newL + w, newT + h)
+                                        currentOnCropRectChange(repositioned)
+                                    }
                                 }
                             }
                         }
