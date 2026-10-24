@@ -4,12 +4,19 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.Rect
 import com.example.data.model.CropRect
+import com.example.data.model.PassportCropMode
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetector
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.google.mlkit.vision.text.Text
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
@@ -29,6 +36,10 @@ object PassportDetectionHelper {
         FaceDetection.getClient(options)
     }
 
+    private val textRecognizer: TextRecognizer by lazy {
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    }
+
     data class PassportFaceItem(
         val cropRect: CropRect,
         val faceBoundingBox: Rect
@@ -43,7 +54,8 @@ object PassportDetectionHelper {
     suspend fun detectPassportCrop(
         source: Bitmap,
         rotationDegrees: Int = 0,
-        isFlipped: Boolean = false
+        isFlipped: Boolean = false,
+        cropMode: PassportCropMode = PassportCropMode.PHOTO_ONLY
     ): DetectionResult = withContext(Dispatchers.Default) {
         val orientedBitmap = if (rotationDegrees != 0 || isFlipped) {
             val matrix = Matrix()
@@ -54,7 +66,7 @@ object PassportDetectionHelper {
             source
         }
 
-        val allFaces = detectAllPassportFaces(orientedBitmap)
+        val allFaces = detectAllPassportFaces(orientedBitmap, cropMode = cropMode)
 
         if (orientedBitmap != source) {
             orientedBitmap.recycle()
@@ -99,7 +111,7 @@ object PassportDetectionHelper {
         source: Bitmap,
         rotationDegrees: Int = 0,
         isFlipped: Boolean = false,
-        cropMode: com.example.data.model.PassportCropMode = com.example.data.model.PassportCropMode.PHOTO_ONLY
+        cropMode: PassportCropMode = PassportCropMode.PHOTO_ONLY
     ): List<PassportFaceItem> = withContext(Dispatchers.Default) {
         val oriented = if (rotationDegrees != 0 || isFlipped) {
             val matrix = Matrix()
@@ -114,25 +126,42 @@ object PassportDetectionHelper {
         val srcH = oriented.height
         val image = InputImage.fromBitmap(oriented, 0)
 
-        val mlFaces: List<Face> = suspendCancellableCoroutine { continuation ->
-            faceDetector.process(image)
-                .addOnSuccessListener { faces ->
-                    continuation.resume(faces)
+        // Run face detection and text recognition concurrently on the sheet image
+        val (mlFaces, visionText) = coroutineScope {
+            val facesDeferred = async {
+                suspendCancellableCoroutine<List<Face>> { cont ->
+                    faceDetector.process(image)
+                        .addOnSuccessListener { cont.resume(it) }
+                        .addOnFailureListener { error ->
+                            error.printStackTrace()
+                            cont.resume(emptyList())
+                        }
                 }
-                .addOnFailureListener { error ->
-                    error.printStackTrace()
-                    continuation.resume(emptyList())
+            }
+
+            val textDeferred = async {
+                suspendCancellableCoroutine<Text?> { cont ->
+                    textRecognizer.process(image)
+                        .addOnSuccessListener { cont.resume(it) }
+                        .addOnFailureListener {
+                            cont.resume(null)
+                        }
                 }
+            }
+
+            facesDeferred.await() to textDeferred.await()
         }
 
         if (oriented != source) {
             oriented.recycle()
         }
 
+        val allLines = visionText?.textBlocks?.flatMap { it.lines } ?: emptyList()
+
         if (mlFaces.isEmpty()) {
             val imageAspect = srcW.toFloat() / srcH.toFloat()
-            val normW = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.65f else 0.60f
-            val normH = if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) 0.85f else (normW * imageAspect / PASSPORT_ASPECT_RATIO).coerceAtMost(0.85f)
+            val normW = if (cropMode == PassportCropMode.WITH_SIGNATURE) 0.65f else 0.60f
+            val normH = if (cropMode == PassportCropMode.WITH_SIGNATURE) 0.85f else (normW * imageAspect / PASSPORT_ASPECT_RATIO).coerceAtMost(0.85f)
             val left = ((1f - normW) / 2f).coerceIn(0f, 0.95f)
             val top = 0.06f.coerceIn(0f, (1f - normH).coerceAtLeast(0f))
             val fallbackRect = CropRect(left, top, (left + normW).coerceAtMost(1f), (top + normH).coerceAtMost(1f))
@@ -176,71 +205,171 @@ object PassportDetectionHelper {
                 kotlin.math.abs(other.boundingBox.centerX() - faceCenterX) < faceW * 1.6f
             }.maxByOrNull { it.boundingBox.bottom }
 
-            val photoTopPx: Float
-            val photoBottomPx: Float
-            val photoWidthPx: Float
+            // Find handwritten roll number line directly above this head
+            val numberLineAbove = allLines.filter { line ->
+                val b = line.boundingBox ?: return@filter false
+                b.bottom <= box.top + (faceH * 0.08f) &&
+                b.top >= box.top - (faceH * 0.95f) &&
+                kotlin.math.abs(b.centerX() - faceCenterX) < faceW * 1.6f
+            }.maxByOrNull { it.boundingBox?.bottom ?: 0 }
 
-            if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
-                // PHOTO + SIGNATURE BELOW:
-                // 1. Top: Just enough headroom for head, hair, and photo background (stops below roll number above)
-                var topPx = (box.top.toFloat() - (faceH * 0.28f)).coerceAtLeast(0f)
-                if (faceAbove != null) {
-                    val floorAfterPrevFace = faceAbove.boundingBox.bottom.toFloat() + (faceH * 1.55f)
-                    if (floorAfterPrevFace < box.top) {
-                        topPx = maxOf(topPx, floorAfterPrevFace)
-                    }
-                }
-                photoTopPx = topPx
-
-                // 2. Bottom: Captures shirt/torso + signature line, but strictly stops BEFORE the next photo's number below
-                var bottomPx = box.bottom.toFloat() + (faceH * 1.48f)
-                if (faceBelow != null) {
-                    // Ceiling strictly above the next student's roll number
-                    val ceilingBeforeNextNumber = faceBelow.boundingBox.top.toFloat() - (faceH * 0.65f)
-                    if (ceilingBeforeNextNumber > box.bottom + (faceH * 1.10f)) {
-                        bottomPx = minOf(bottomPx, ceilingBeforeNextNumber)
-                    }
-                }
-                photoBottomPx = bottomPx.coerceAtMost(srcH.toFloat())
-
-                // 3. Width: Fits photo sticker, shoulders, and full signature without overlapping adjacent columns
-                val targetW = (faceW * 2.15f).coerceIn(faceH * 1.40f, faceH * 1.65f)
-                photoWidthPx = targetW.coerceAtMost(srcW.toFloat())
-            } else {
-                // STANDARD PASSPORT (PHOTO ONLY):
-                // Generous passport framing with hair, chest, shoulders
-                var topPx = (box.top.toFloat() - (faceH * 0.32f)).coerceAtLeast(0f)
-                if (faceAbove != null) {
-                    val floorAfterPrevFace = faceAbove.boundingBox.bottom.toFloat() + (faceH * 1.25f)
-                    if (floorAfterPrevFace < box.top) {
-                        topPx = maxOf(topPx, floorAfterPrevFace)
-                    }
-                }
-                photoTopPx = topPx
-
-                var bottomPx = box.bottom.toFloat() + (faceH * 1.15f)
-                if (faceBelow != null) {
-                    val ceilingBeforeNextPhoto = faceBelow.boundingBox.top.toFloat() - (faceH * 0.50f)
-                    if (ceilingBeforeNextPhoto > box.bottom + (faceH * 0.85f)) {
-                        bottomPx = minOf(bottomPx, ceilingBeforeNextPhoto)
-                    }
-                }
-                photoBottomPx = bottomPx.coerceAtMost(srcH.toFloat())
-
-                val h = photoBottomPx - photoTopPx
-                photoWidthPx = (h * PASSPORT_ASPECT_RATIO).coerceAtMost(srcW.toFloat())
+            // Find signature lines directly below this chin
+            val signatureLines = allLines.filter { line ->
+                val b = line.boundingBox ?: return@filter false
+                val belowChin = b.top >= box.bottom - (faceH * 0.10f)
+                val withinSigReach = b.top <= box.bottom + (faceH * 1.65f)
+                val alignedWithCol = kotlin.math.abs(b.centerX() - faceCenterX) < faceW * 2.5f
+                val beforeFaceBelow = if (faceBelow != null) b.bottom <= faceBelow.boundingBox.top - (faceH * 0.25f) else true
+                belowChin && withinSigReach && alignedWithCol && beforeFaceBelow
             }
 
-            var photoLeftPx = faceCenterX - (photoWidthPx / 2f)
-            var photoRightPx = photoLeftPx + photoWidthPx
+            // Find if the student below has a roll number above their head
+            val numberLineBelowStudent = if (faceBelow != null) {
+                allLines.filter { line ->
+                    val b = line.boundingBox ?: return@filter false
+                    b.bottom <= faceBelow.boundingBox.top + (faceH * 0.08f) &&
+                    b.top >= faceBelow.boundingBox.top - (faceH * 0.95f) &&
+                    kotlin.math.abs(b.centerX() - faceBelow.boundingBox.centerX()) < faceW * 1.6f
+                }.minByOrNull { it.boundingBox?.top ?: Int.MAX_VALUE }
+            } else null
+
+            val photoTopPx: Float
+            val photoBottomPx: Float
+            var photoLeftPx: Float
+            var photoRightPx: Float
+
+            if (cropMode == PassportCropMode.WITH_SIGNATURE) {
+                // PHOTO + SIGNATURE BELOW:
+                // 1. TOP: Ensure head & hair are 100% covered without cutting hair,
+                // while strictly stopping BELOW the roll number written above the photo.
+                var topPx = (box.top.toFloat() - (faceH * 0.40f)).coerceAtLeast(0f)
+                if (numberLineAbove != null) {
+                    val numberBottom = numberLineAbove.boundingBox!!.bottom.toFloat()
+                    topPx = maxOf(topPx, numberBottom + 4f)
+                }
+                if (faceAbove != null) {
+                    val floorAfterPrev = faceAbove.boundingBox.bottom.toFloat() + (faceH * 1.55f)
+                    if (floorAfterPrev < box.top) {
+                        topPx = maxOf(topPx, floorAfterPrev)
+                    }
+                }
+                photoTopPx = topPx
+
+                // 2. BOTTOM: Captures torso + full signature.
+                // Must strictly stop BEFORE the next student's roll number or photo below.
+                var bottomPx = box.bottom.toFloat() + (faceH * 1.48f)
+                if (signatureLines.isNotEmpty()) {
+                    val sigBottom = signatureLines.maxOf { it.boundingBox!!.bottom }.toFloat()
+                    bottomPx = maxOf(bottomPx, sigBottom + 12f)
+                }
+                // Stop strictly before next student's roll number
+                if (numberLineBelowStudent != null) {
+                    val ceilingBeforeNextNum = numberLineBelowStudent.boundingBox!!.top.toFloat() - 4f
+                    if (ceilingBeforeNextNum > box.bottom + (faceH * 1.05f)) {
+                        bottomPx = minOf(bottomPx, ceilingBeforeNextNum)
+                    }
+                }
+                if (faceBelow != null) {
+                    val ceilingBeforeFaceBelow = faceBelow.boundingBox.top.toFloat() - (faceH * 0.65f)
+                    if (ceilingBeforeFaceBelow > box.bottom + (faceH * 1.05f)) {
+                        bottomPx = minOf(bottomPx, ceilingBeforeFaceBelow)
+                    }
+                }
+                photoBottomPx = bottomPx.coerceAtMost(srcH.toFloat())
+
+                // 3. HORIZONTAL (LEFT & RIGHT):
+                // Prioritize covering the ENTIRE signature from left to right, even if shifted
+                // or wide, along with full shoulders and photo width.
+                val baseWidth = maxOf(faceW * 2.45f, faceH * 1.65f)
+                var leftPx = faceCenterX - (baseWidth / 2f)
+                var rightPx = faceCenterX + (baseWidth / 2f)
+
+                if (signatureLines.isNotEmpty()) {
+                    val sigLeft = signatureLines.minOf { it.boundingBox!!.left }.toFloat()
+                    val sigRight = signatureLines.maxOf { it.boundingBox!!.right }.toFloat()
+                    val sigPadding = 16f
+                    // Expand horizontally to cover complete signature start and end
+                    leftPx = minOf(leftPx, sigLeft - sigPadding)
+                    rightPx = maxOf(rightPx, sigRight + sigPadding)
+                }
+
+                // Protect against overlapping neighboring student faces in adjacent columns
+                val faceToLeft = mlFaces.filter {
+                    it != face &&
+                    it.boundingBox.right < box.left &&
+                    kotlin.math.abs(it.boundingBox.centerY() - box.centerY()) < faceH * 0.85f
+                }.maxByOrNull { it.boundingBox.right }
+
+                val faceToRight = mlFaces.filter {
+                    it != face &&
+                    it.boundingBox.left > box.right &&
+                    kotlin.math.abs(it.boundingBox.centerY() - box.centerY()) < faceH * 0.85f
+                }.minByOrNull { it.boundingBox.left }
+
+                if (faceToLeft != null) {
+                    val leftLimit = faceToLeft.boundingBox.right.toFloat() + (faceW * 0.30f)
+                    leftPx = maxOf(leftPx, leftLimit)
+                }
+                if (faceToRight != null) {
+                    val rightLimit = faceToRight.boundingBox.left.toFloat() - (faceW * 0.30f)
+                    rightPx = minOf(rightPx, rightLimit)
+                }
+
+                photoLeftPx = leftPx
+                photoRightPx = rightPx
+            } else {
+                // STANDARD PASSPORT (PHOTO ONLY):
+                // 1. TOP: Full hair coverage without top number
+                var topPx = (box.top.toFloat() - (faceH * 0.40f)).coerceAtLeast(0f)
+                if (numberLineAbove != null) {
+                    val numberBottom = numberLineAbove.boundingBox!!.bottom.toFloat()
+                    topPx = maxOf(topPx, numberBottom + 4f)
+                }
+                if (faceAbove != null) {
+                    val floorAfterPrev = faceAbove.boundingBox.bottom.toFloat() + (faceH * 1.25f)
+                    if (floorAfterPrev < box.top) {
+                        topPx = maxOf(topPx, floorAfterPrev)
+                    }
+                }
+                photoTopPx = topPx
+
+                // 2. BOTTOM: Clean passport framing (head, neck, collar/chest).
+                // MUST NOT capture signature below! Shorten bottom and stop strictly above any signature.
+                var bottomPx = box.bottom.toFloat() + (faceH * 0.74f)
+                if (signatureLines.isNotEmpty()) {
+                    val sigTop = signatureLines.minOf { it.boundingBox!!.top }.toFloat()
+                    // Stop cleanly at or above signature with safe margin
+                    bottomPx = minOf(bottomPx, sigTop - 6f)
+                }
+                if (faceBelow != null) {
+                    val ceilingBeforeNext = faceBelow.boundingBox.top.toFloat() - (faceH * 0.50f)
+                    if (ceilingBeforeNext > box.bottom + (faceH * 0.60f)) {
+                        bottomPx = minOf(bottomPx, ceilingBeforeNext)
+                    }
+                }
+                val minHeight = faceH * 1.25f
+                if (bottomPx < photoTopPx + minHeight) {
+                    bottomPx = (photoTopPx + minHeight).coerceAtMost(srcH.toFloat())
+                }
+                photoBottomPx = bottomPx.coerceAtMost(srcH.toFloat())
+
+                // 3. WIDTH: Maintain standard passport aspect ratio (3.5 × 4.5 cm)
+                val h = photoBottomPx - photoTopPx
+                val photoWidthPx = (h * PASSPORT_ASPECT_RATIO).coerceAtMost(srcW.toFloat())
+                photoLeftPx = faceCenterX - (photoWidthPx / 2f)
+                photoRightPx = photoLeftPx + photoWidthPx
+            }
 
             // Ensure horizontal bounds are strictly within bitmap
             if (photoLeftPx < 0f) {
+                val shift = -photoLeftPx
                 photoLeftPx = 0f
-                photoRightPx = photoWidthPx.coerceAtMost(srcW.toFloat())
-            } else if (photoRightPx > srcW) {
+                photoRightPx = (photoRightPx + shift).coerceAtMost(srcW.toFloat())
+            }
+            if (photoRightPx > srcW.toFloat()) {
+                val shift = photoRightPx - srcW.toFloat()
                 photoRightPx = srcW.toFloat()
-                photoLeftPx = (srcW - photoWidthPx).coerceAtLeast(0f)
+                photoLeftPx = (photoLeftPx - shift).coerceAtLeast(0f)
             }
 
             val normLeft = (photoLeftPx / srcW).coerceIn(0f, 0.98f)
