@@ -162,25 +162,71 @@ object PassportDetectionHelper {
             val faceW = box.width().toFloat().coerceAtLeast(10f)
             val faceCenterX = box.centerX().toFloat()
 
+            // Find if there is another face directly below in the same column
+            val faceBelow = mlFaces.filter { other ->
+                other != face &&
+                other.boundingBox.top > box.bottom &&
+                kotlin.math.abs(other.boundingBox.centerX() - faceCenterX) < faceW * 1.6f
+            }.minByOrNull { it.boundingBox.top }
+
+            // Find if there is another face directly above in the same column
+            val faceAbove = mlFaces.filter { other ->
+                other != face &&
+                other.boundingBox.bottom < box.top &&
+                kotlin.math.abs(other.boundingBox.centerX() - faceCenterX) < faceW * 1.6f
+            }.maxByOrNull { it.boundingBox.bottom }
+
             val photoTopPx: Float
             val photoBottomPx: Float
             val photoWidthPx: Float
 
             if (cropMode == com.example.data.model.PassportCropMode.WITH_SIGNATURE) {
                 // PHOTO + SIGNATURE BELOW:
-                // Generous coverage satisfying user's exact requirements:
-                // 1. Head pura cover ho: generous headroom for hair and crown
-                // 2. Solder pura cover ho + thoda sa daye-baye margin: wide enough to cover both shoulders, torso, and wide signature
-                // 3. Whole signature cover ho: extends comfortably down past chest and signature box
-                photoTopPx = (box.top.toFloat() - (faceH * 0.40f)).coerceAtLeast(0f)
-                photoBottomPx = (box.bottom.toFloat() + (faceH * 2.25f)).coerceAtMost(srcH.toFloat())
-                val targetW = maxOf(faceW * 2.50f, faceH * 1.85f)
+                // 1. Top: Just enough headroom for head, hair, and photo background (stops below roll number above)
+                var topPx = (box.top.toFloat() - (faceH * 0.28f)).coerceAtLeast(0f)
+                if (faceAbove != null) {
+                    val floorAfterPrevFace = faceAbove.boundingBox.bottom.toFloat() + (faceH * 1.55f)
+                    if (floorAfterPrevFace < box.top) {
+                        topPx = maxOf(topPx, floorAfterPrevFace)
+                    }
+                }
+                photoTopPx = topPx
+
+                // 2. Bottom: Captures shirt/torso + signature line, but strictly stops BEFORE the next photo's number below
+                var bottomPx = box.bottom.toFloat() + (faceH * 1.48f)
+                if (faceBelow != null) {
+                    // Ceiling strictly above the next student's roll number
+                    val ceilingBeforeNextNumber = faceBelow.boundingBox.top.toFloat() - (faceH * 0.65f)
+                    if (ceilingBeforeNextNumber > box.bottom + (faceH * 1.10f)) {
+                        bottomPx = minOf(bottomPx, ceilingBeforeNextNumber)
+                    }
+                }
+                photoBottomPx = bottomPx.coerceAtMost(srcH.toFloat())
+
+                // 3. Width: Fits photo sticker, shoulders, and full signature without overlapping adjacent columns
+                val targetW = (faceW * 2.15f).coerceIn(faceH * 1.40f, faceH * 1.65f)
                 photoWidthPx = targetW.coerceAtMost(srcW.toFloat())
             } else {
                 // STANDARD PASSPORT (PHOTO ONLY):
-                // Generous passport framing with full hair, chest, shoulders & surrounding scene
-                photoTopPx = (box.top.toFloat() - (faceH * 0.42f)).coerceAtLeast(0f)
-                photoBottomPx = (box.bottom.toFloat() + (faceH * 1.18f)).coerceAtMost(srcH.toFloat())
+                // Generous passport framing with hair, chest, shoulders
+                var topPx = (box.top.toFloat() - (faceH * 0.32f)).coerceAtLeast(0f)
+                if (faceAbove != null) {
+                    val floorAfterPrevFace = faceAbove.boundingBox.bottom.toFloat() + (faceH * 1.25f)
+                    if (floorAfterPrevFace < box.top) {
+                        topPx = maxOf(topPx, floorAfterPrevFace)
+                    }
+                }
+                photoTopPx = topPx
+
+                var bottomPx = box.bottom.toFloat() + (faceH * 1.15f)
+                if (faceBelow != null) {
+                    val ceilingBeforeNextPhoto = faceBelow.boundingBox.top.toFloat() - (faceH * 0.50f)
+                    if (ceilingBeforeNextPhoto > box.bottom + (faceH * 0.85f)) {
+                        bottomPx = minOf(bottomPx, ceilingBeforeNextPhoto)
+                    }
+                }
+                photoBottomPx = bottomPx.coerceAtMost(srcH.toFloat())
+
                 val h = photoBottomPx - photoTopPx
                 photoWidthPx = (h * PASSPORT_ASPECT_RATIO).coerceAtMost(srcW.toFloat())
             }
